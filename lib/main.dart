@@ -1,0 +1,131 @@
+import 'dart:async';
+import 'dart:io'; // Untuk HttpOverrides
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart'; // Localizations
+import 'package:google_fonts/google_fonts.dart'; // Google Fonts
+import 'package:intl/date_symbol_data_local.dart'; // Untuk format tanggal lokal
+import 'http_overrides.dart'; // Untuk mengatasi error sertifikat
+import 'login_page.dart'; // Halaman login Anda
+
+
+void main() {
+  // Pastikan semua binding Flutter siap sebelum menjalankan kode lain
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Menerapkan override untuk mengizinkan sertifikat SSL (HANYA UNTUK DEVELOPMENT)
+  HttpOverrides.global = MyHttpOverrides();
+
+  // Menginisialisasi format tanggal untuk bahasa lokal (Indonesia)
+  initializeDateFormatting('id_ID', null).then((_) {
+    // Menjalankan aplikasi
+    runApp(const MyApp());
+  });
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'HKBP Pondok Kopi',
+      // Menambahkan localizations untuk mendukung bahasa Indonesia
+      localizationsDelegates: [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('id', 'ID'), // Indonesia
+        Locale('en', 'US'), // English (fallback)
+      ],
+      locale: const Locale('id', 'ID'),
+      theme: ThemeData(
+        // Tema modern menggunakan Material 3
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue, // Warna utama aplikasi
+          brightness: Brightness.light,
+        ),
+        // Menggunakan Google Fonts - Inter sebagai font utama
+        textTheme: GoogleFonts.interTextTheme(),
+        fontFamily: GoogleFonts.inter().fontFamily,
+      ),
+      // Halaman awal aplikasi adalah SplashScreen
+      home: const SplashScreen(),
+    );
+  }
+}
+
+// Widget untuk menampilkan layar pembuka (SplashScreen)
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Pindah ke LoginPage setelah 3 detik
+    Timer(const Duration(seconds: 3), () {
+      // Pastikan widget masih ada di tree sebelum melakukan navigasi
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Logo aplikasi
+            Image.asset(
+              'assets/logo.png',
+              width: 200,
+              height: 200,
+              // Fallback jika gambar gagal dimuat
+              errorBuilder: (context, error, stackTrace) {
+                return Icon(
+                  Icons.church,
+                  size: 150,
+                  color: Theme.of(context).colorScheme.primary,
+                );
+              },
+            ),
+            const SizedBox(height: 30),
+            // Nama aplikasi
+            Text(
+              'HKBP Pondok Kopi',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Versi aplikasi
+            Text(
+              'Versi 1.0.0',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
