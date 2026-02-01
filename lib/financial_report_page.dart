@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'financial_detail_page.dart'; // Import halaman detail
+import 'config/api_config.dart';
+import 'utils/error_handler.dart';
 
 
 class FinancialReportPage extends StatefulWidget {
@@ -18,7 +20,6 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
   List<dynamic> monthlyReports = [];
   List<dynamic> annualTotals = [];
   bool isLoading = true;
-  final String _apiKey = "RAHASIA_HKBP_2024";
 
   // Data statis untuk filter tahun
   final List<int> yearList = [2026, 2025, 2024, 2023];
@@ -50,10 +51,10 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
     try {
 
       final response = await http.get(
-        Uri.parse("https://hkbppondokkopi.org/api_hkbp/get_financial_total.php?api_key=$_apiKey"),
+        Uri.parse("${ApiConfig.baseUrl}/get_financial_total.php?api_key=${ApiConfig.apiKey}"),
 
          // final response = await http.get(
-      //Uri.parse("http://127.0.0.1/HKBP/api_hkbp/get_financial_total.php?api_key=$_apiKey"),
+      //Uri.parse("${ApiConfig.devBaseUrl}/get_financial_total.php?api_key=${ApiConfig.apiKey}"),
 
 
     ).timeout(const Duration(seconds: 15));
@@ -64,7 +65,8 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
         setState(() => annualTotals = decodedData);
       }
     } catch (e) {
-      debugPrint("Error fetching annual totals: $e");
+      ErrorHandler.logError(e);
+      // Error tidak ditampilkan ke user karena ini background fetch
     }
   }
 
@@ -72,7 +74,7 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
   Future<void> _fetchFinancialReports() async {
     try {
       final response = await http.get(
-        Uri.parse("https://hkbppondokkopi.org/api_hkbp/get_financial_report.php?api_key=$_apiKey"),
+        Uri.parse("${ApiConfig.baseUrl}/get_financial_report.php?api_key=${ApiConfig.apiKey}"),
       ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
@@ -81,7 +83,8 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
         setState(() => monthlyReports = decodedData);
       }
     } catch (e) {
-      debugPrint("Error fetching monthly reports: $e");
+      ErrorHandler.logError(e);
+      // Error tidak ditampilkan ke user karena ini background fetch
     }
   }
 

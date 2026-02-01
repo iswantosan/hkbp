@@ -13,8 +13,11 @@ import 'financial_report_page.dart';
 import 'Home.dart';
 import 'login_page.dart';
 import 'news_detail_page.dart';
+import 'config/api_config.dart';
 import 'profile_page.dart';
 import 'gedung_serbaguna_page.dart';
+import 'utils/error_handler.dart';
+import 'services/auth_service.dart'; // Auth service untuk logout
 
 
 // --- PERBAIKAN 1: Modifikasi definisi class HomeScreen ---
@@ -44,10 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool isNewsLoading = true;
   bool _showAllNews = false;
 
-  final String _apiKey = "RAHASIA_HKBP_2024";
-
-
-  final String _apiBaseUrl = "https://hkbppondokkopi.org/api_hkbp";
+  final String _apiBaseUrl = ApiConfig.baseUrl;
   //final String _apiBaseUrl = "http://127.0.0.1/HKBP/api_hkbp";
 
   // Hapus ID statis, karena kita akan menggunakan ID dinamis dari widget
@@ -84,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // --- Fungsi-fungsi fetch data, dispose, _navigateTo, _handleLogout tidak perlu diubah ---
   Future<void> fetchWelcomeData() async {
     try {
-      final uri = Uri.parse("$_apiBaseUrl/get_welcome.php?api_key=$_apiKey");
+      final uri = Uri.parse("$_apiBaseUrl/get_welcome.php?api_key=${ApiConfig.apiKey}");
       final response = await http.get(uri).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
@@ -103,15 +103,16 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => isWelcomeLoading = false);
       }
     } catch (e) {
-      print("fetchWelcomeData Exception: ${e.toString()}");
+      ErrorHandler.logError(e);
       setState(() => isWelcomeLoading = false);
+      // Error tidak ditampilkan ke user karena ini background fetch
     }
   }
 
   Future<void> fetchPortfolioNews() async {
     setState(() => isNewsLoading = true);
     try {
-      final uri = Uri.parse("$_apiBaseUrl/get_portfolio.php?api_key=$_apiKey");
+      final uri = Uri.parse("$_apiBaseUrl/get_portfolio.php?api_key=${ApiConfig.apiKey}");
       final response = await http.get(uri).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
@@ -161,7 +162,11 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Batal")),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
+              // Clear login data
+              await AuthService.logout();
+              
+              if (!mounted) return;
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (context) => const LoginPage()),

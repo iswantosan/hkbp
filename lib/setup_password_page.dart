@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'login_page.dart';
+import 'config/api_config.dart';
+import 'utils/error_handler.dart';
 
 class SetupPasswordPage extends StatefulWidget {
   final int idJemaat;
@@ -58,8 +60,8 @@ class _SetupPasswordPageState extends State<SetupPasswordPage> {
     });
 
     try {
-      final url = Uri.parse("https://hkbppondokkopi.org/api_hkbp/register_user.php?api_key=RAHASIA_HKBP_2024");
-      // final url = Uri.parse("http://127.0.0.1/HKBP/api_hkbp/register_user.php?api_key=RAHASIA_HKBP_2024");
+      final url = Uri.parse("${ApiConfig.baseUrl}/register_user.php?api_key=${ApiConfig.apiKey}");
+      // final url = Uri.parse("${ApiConfig.devBaseUrl}/register_user.php?api_key=${ApiConfig.apiKey}");
 
       final response = await http.post(
         url,
@@ -84,9 +86,9 @@ class _SetupPasswordPageState extends State<SetupPasswordPage> {
         _showError(data['message'] ?? 'Terjadi kesalahan. Silahkan coba lagi.');
       }
     } catch (e) {
-      print("Error: $e");
+      ErrorHandler.logError(e);
       if (mounted) {
-        _showError("Terjadi kesalahan koneksi ke server. Periksa internet Anda.");
+        _showError(ErrorHandler.getUserFriendlyMessage(e));
       }
     } finally {
       if (mounted) {
@@ -291,6 +293,7 @@ class _SetupPasswordPageState extends State<SetupPasswordPage> {
     );
   }
 }
+
 
 
 

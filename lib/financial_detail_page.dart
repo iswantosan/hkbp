@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:collection/collection.dart'; // Pastikan package collection sudah ada di pubspec.yaml
+import 'config/api_config.dart';
+import 'utils/error_handler.dart';
 
 // Enum untuk mengelola mode pengelompokan
 enum GroupingMode { date, week }
@@ -20,7 +22,6 @@ class _FinancialDetailPageState extends State<FinancialDetailPage> with SingleTi
   Future<List<dynamic>>? _incomeDetailsFuture;
   Future<List<dynamic>>? _expenseDetailsFuture;
 
-  final String _apiKey = "RAHASIA_HKBP_2024";
   late TabController _tabController;
 
   // --- State untuk mengelola mode drill up/down ---
@@ -63,8 +64,8 @@ class _FinancialDetailPageState extends State<FinancialDetailPage> with SingleTi
     int year = widget.reportData['year'];
     if (monthNumber == 0 || year == 0) throw Exception("Parameter bulan atau tahun tidak valid.");
 
-    final uri = Uri.parse("https://hkbppondokkopi.org/api_hkbp/$endpoint?api_key=$_apiKey&month=$monthNumber&year=$year");
-    //final uri = Uri.parse("http://127.0.0.1/HKBP/api_hkbp/$endpoint?api_key=$_apiKey&month=$monthNumber&year=$year");
+    final uri = Uri.parse("${ApiConfig.baseUrl}/$endpoint?api_key=${ApiConfig.apiKey}&month=$monthNumber&year=$year");
+    //final uri = Uri.parse("${ApiConfig.devBaseUrl}/$endpoint?api_key=${ApiConfig.apiKey}&month=$monthNumber&year=$year");
 
     try {
       final response = await http.get(uri).timeout(const Duration(seconds: 20));
@@ -81,7 +82,8 @@ class _FinancialDetailPageState extends State<FinancialDetailPage> with SingleTi
         throw Exception("Gagal terhubung ke server. Status: ${response.statusCode}");
       }
     } catch (e) {
-      throw Exception("Terjadi kesalahan saat memproses data: $e");
+      ErrorHandler.logError(e);
+      throw Exception(ErrorHandler.getUserFriendlyMessage(e));
     }
   }
 

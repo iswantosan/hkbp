@@ -4,6 +4,8 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
+import 'config/api_config.dart';
+import 'utils/error_handler.dart';
 
 class NewsBulletinPage extends StatefulWidget {
   const NewsBulletinPage({super.key});
@@ -35,7 +37,7 @@ class _NewsBulletinPageState extends State<NewsBulletinPage> {
     setState(() => _isLoading = true);
     try {
       final response = await http.get(
-        Uri.parse("https://hkbppondokkopi.org/api_hkbp/get_news.php?api_key=RAHASIA_HKBP_2024"),
+        Uri.parse("${ApiConfig.baseUrl}/get_news.php?api_key=${ApiConfig.apiKey}"),
       );
 
       if (response.statusCode == 200) {
@@ -60,11 +62,17 @@ class _NewsBulletinPageState extends State<NewsBulletinPage> {
         throw Exception("Gagal memuat data dari server.");
       }
     } catch (e) {
-      debugPrint("Error: $e");
+      ErrorHandler.logError(e);
       if(mounted){
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Terjadi kesalahan: ${e.toString()}"), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(ErrorHandler.getUserFriendlyMessage(e)),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+          ),
         );
       }
     }

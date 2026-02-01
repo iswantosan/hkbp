@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'edit_profile_page.dart'; // Pastikan file ini ada dan benar
+import 'config/api_config.dart';
+import 'utils/error_handler.dart';
 
 class ProfilePage extends StatefulWidget {
   final int userId;
@@ -15,10 +17,7 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  final String _apiKey = "RAHASIA_HKBP_2024";
   Future<Map<String, dynamic>>? _userProfileFuture;
-
-  final String _apiBaseUrl = "https://hkbppondokkopi.org/api_hkbp";
 
   // Peta untuk label khusus yang disesuaikan dengan daftar kolom Anda
   static const Map<String, String> _specialLabels = {
@@ -67,7 +66,7 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<Map<String, dynamic>> fetchUserProfile() async {
     // --- PERBAIKAN: Menambahkan parameter cache-busting (anti-cache) ---
     final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
-    final uri = Uri.parse("$_apiBaseUrl/get_user_profile.php?api_key=$_apiKey&id_jemaat=${widget.userId}&cache_buster=$timestamp");
+    final uri = Uri.parse("${ApiConfig.baseUrl}/get_user_profile.php?api_key=${ApiConfig.apiKey}&id_jemaat=${widget.userId}&cache_buster=$timestamp");
 
     print("Memanggil API Profil: $uri");
 
@@ -91,9 +90,9 @@ class _ProfilePageState extends State<ProfilePage> {
         throw Exception('Gagal memuat data. Server merespons dengan status: ${response.statusCode}');
       }
     } on TimeoutException {
-      throw Exception('Koneksi timeout. Periksa koneksi internet Anda.');
+      throw Exception(ErrorHandler.getUserFriendlyMessage('timeout'));
     } catch (e) {
-      throw Exception(e.toString().replaceAll('Exception: ', ''));
+      throw Exception(ErrorHandler.getUserFriendlyMessage(e));
     }
   }
 

@@ -3,6 +3,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:convert';
+import 'config/api_config.dart';
+import 'utils/error_handler.dart';
 
 
 class ClergyPage extends StatefulWidget {
@@ -28,7 +30,7 @@ class _ClergyPageState extends State<ClergyPage> {
     try {
       // Sesuaikan IP: 10.0.2.2 untuk Android Emulator, localhost untuk iOS
       final response = await http.get(
-        Uri.parse("https://hkbppondokkopi.org/api_hkbp/get_clergy.php?api_key=RAHASIA_HKBP_2024"),
+        Uri.parse("${ApiConfig.baseUrl}/get_clergy.php?api_key=${ApiConfig.apiKey}"),
 
        //   final response = await http.get(
       //Uri.parse("http://127.0.0.1/HKBP/api_hkbp/get_clergy.php?api_key=RAHASIA_HKBP_2024"),
@@ -69,8 +71,9 @@ class _ClergyPageState extends State<ClergyPage> {
         });
       }
     } catch (e) {
-      debugPrint("Error Koneksi Clergy: $e");
+      ErrorHandler.logError(e);
       setState(() => _isLoading = false);
+      // Error tidak ditampilkan ke user karena ini background fetch
     }
   }
 

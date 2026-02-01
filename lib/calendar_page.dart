@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'config/api_config.dart';
+import 'utils/error_handler.dart';
 
 class CalendarPage extends StatefulWidget {
   const CalendarPage({super.key});
@@ -44,7 +46,7 @@ class _CalendarPageState extends State<CalendarPage> {
       // CATATAN: Gunakan 10.0.2.2 untuk Android Emulator.
       // Jika pakai iOS Simulator, gunakan 'localhost'.
       final response = await http.get(
-        Uri.parse("https://hkbppondokkopi.org/api_hkbp/get_sermons.php?api_key=RAHASIA_HKBP_2024"),
+        Uri.parse("${ApiConfig.baseUrl}/get_sermons.php?api_key=${ApiConfig.apiKey}"),
       ).timeout(const Duration(seconds: 10));
 
      // Uri.parse("http://127.0.0.1/HKBP/api_hkbp/get_sermons.php?api_key=RAHASIA_HKBP_2024"),
@@ -70,14 +72,14 @@ class _CalendarPageState extends State<CalendarPage> {
         });
       } else {
         setState(() {
-          _errorMessage = "Server error: ${response.statusCode}";
+          _errorMessage = ErrorHandler.getUserFriendlyMessage("Server error: ${response.statusCode}");
           _isLoading = false;
         });
       }
     } catch (e) {
-      debugPrint("Error Koneksi Calendar: $e");
+      ErrorHandler.logError(e);
       setState(() {
-        _errorMessage = "Gagal terhubung ke server. Pastikan XAMPP menyala.";
+        _errorMessage = ErrorHandler.getUserFriendlyMessage(e);
         _isLoading = false;
       });
     }

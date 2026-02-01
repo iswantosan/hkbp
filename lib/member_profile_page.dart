@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'config/api_config.dart';
+import 'utils/error_handler.dart';
 
 // Halaman untuk menampilkan detail tanggungan (contoh)
 class TanggunganDetailPage extends StatelessWidget {
@@ -48,7 +50,7 @@ class _FamilyDetailPageState extends State<FamilyDetailPage> {
     });
     try {
       final uri = Uri.parse(
-          "https://hkbppondokkopi.org/api_hkbp/get_family_detail.php?api_key=RAHASIA_HKBP_2024&id=${widget.familyId}");
+          "${ApiConfig.baseUrl}/get_family_detail.php?api_key=${ApiConfig.apiKey}&id=${widget.familyId}");
       final response = await http.get(uri);
 
       if (response.statusCode == 200) {
@@ -83,9 +85,9 @@ class _FamilyDetailPageState extends State<FamilyDetailPage> {
         });
       }
     } catch (e) {
-      debugPrint("Error fetching family data: $e");
+      ErrorHandler.logError(e);
       setState(() {
-        _error = "Terjadi kesalahan koneksi. Silakan coba lagi.";
+        _error = ErrorHandler.getUserFriendlyMessage(e);
         _isLoading = false;
       });
     }

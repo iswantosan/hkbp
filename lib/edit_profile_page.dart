@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'config/api_config.dart';
+import 'utils/error_handler.dart';
 
 class EditProfilePage extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -127,7 +129,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         }
       });
 
-      final uri = Uri.parse("https://hkbppondokkopi.org/api_hkbp/update_user_profile.php?api_key=RAHASIA_HKBP_2024");
+      final uri = Uri.parse("${ApiConfig.baseUrl}/update_user_profile.php?api_key=${ApiConfig.apiKey}");
 
       final response = await http
           .post(
@@ -155,9 +157,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
         throw Exception('Gagal terhubung ke server. Status: ${response.statusCode}');
       }
     } catch (e) {
+      ErrorHandler.logError(e);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString().replaceAll("Exception: ", "")}'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text(ErrorHandler.getUserFriendlyMessage(e)),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+        ),
       );
     } finally {
       if (mounted) {

@@ -3,6 +3,9 @@ import 'package:http/http.dart' as http; // Import library http
 import 'dart:convert'; // Untuk jsonEncode dan jsonDecode
 import 'home_screen.dart';
 import 'register_page.dart';
+import 'config/api_config.dart';
+import 'utils/error_handler.dart';
+import 'services/auth_service.dart'; // Auth service untuk save login data
 
 
 class LoginPage extends StatefulWidget {
@@ -35,8 +38,8 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-     var url = Uri.parse("https://hkbppondokkopi.org/api_hkbp/login.php?api_key=RAHASIA_HKBP_2024");
-     // var url = Uri.parse("http://127.0.0.1/HKBP/api_hkbp/login.php?api_key=RAHASIA_HKBP_2024");
+     var url = Uri.parse("${ApiConfig.baseUrl}/login.php?api_key=${ApiConfig.apiKey}");
+     // var url = Uri.parse("${ApiConfig.devBaseUrl}/login.php?api_key=${ApiConfig.apiKey}");
 
       // --- PERBAIKAN UTAMA: Mengirim data sebagai JSON ---
       var response = await http.post(
@@ -61,6 +64,9 @@ class _LoginPageState extends State<LoginPage> {
         final int userId = data['id_jemaat'];
         final String userFullName = data['nama_kepala_keluarga'];
 
+        // Simpan data login untuk auto-login di next session
+        await AuthService.saveLoginData(userId, userFullName);
+
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
@@ -78,8 +84,8 @@ class _LoginPageState extends State<LoginPage> {
       }
     } catch (e) {
       // Menangkap error koneksi (timeout, no internet, DNS, SSL, dll)
-      print("Detail Error Koneksi: $e"); // Cetak error asli untuk debugging
-      _showError("Terjadi kesalahan koneksi ke server. Periksa internet Anda.");
+      ErrorHandler.logError(e);
+      _showError(ErrorHandler.getUserFriendlyMessage(e));
     } finally {
       if (mounted) {
         setState(() {

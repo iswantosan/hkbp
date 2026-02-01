@@ -1,0 +1,5 @@
+# Copy file ini menjadi .env dan isi dengan API key yang benar
+# Jangan commit file .env ke repository!
+
+API_KEY=RAHASIA_HKBP_2024
+

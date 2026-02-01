@@ -4,13 +4,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart'; // Localizations
 import 'package:google_fonts/google_fonts.dart'; // Google Fonts
 import 'package:intl/date_symbol_data_local.dart'; // Untuk format tanggal lokal
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // Untuk load .env file
 import 'http_overrides.dart'; // Untuk mengatasi error sertifikat
 import 'login_page.dart'; // Halaman login Anda
+import 'home_screen.dart'; // Home screen
+import 'services/auth_service.dart'; // Auth service untuk check login state
 
 
-void main() {
+Future<void> main() async {
   // Pastikan semua binding Flutter siap sebelum menjalankan kode lain
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load .env file untuk API key
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    debugPrint("Warning: File .env tidak ditemukan. Pastikan file .env sudah dibuat di root project.");
+  }
 
   // Menerapkan override untuk mengizinkan sertifikat SSL (HANYA UNTUK DEVELOPMENT)
   HttpOverrides.global = MyHttpOverrides();
@@ -70,16 +80,37 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // Pindah ke LoginPage setelah 3 detik
-    Timer(const Duration(seconds: 3), () {
-      // Pastikan widget masih ada di tree sebelum melakukan navigasi
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginPage()),
-        );
-      }
-    });
+    // Check login state dan redirect setelah 2 detik
+    _checkLoginAndNavigate();
+  }
+
+  Future<void> _checkLoginAndNavigate() async {
+    // Tunggu 2 detik untuk splash screen
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (!mounted) return;
+
+    // Cek apakah user sudah login
+    final loginData = await AuthService.getLoginData();
+    
+    if (loginData != null) {
+      // Jika sudah login, langsung ke HomeScreen
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => HomeScreen(
+            userId: loginData['userId'] as int,
+            userFullName: loginData['userFullName'] as String,
+          ),
+        ),
+      );
+    } else {
+      // Jika belum login, ke LoginPage
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+      );
+    }
   }
 
   @override
