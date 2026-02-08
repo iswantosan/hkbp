@@ -29,6 +29,8 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
   List<dynamic> diakoniaList = [];
   bool isPersembahanLoading = false;
   bool isDiakoniaLoading = false;
+  int selectedYear = DateTime.now().year;
+  final List<int> yearList = [2026, 2025, 2024, 2023, 2022, 2021, 2020];
 
   // Peta untuk label khusus yang disesuaikan dengan daftar kolom Anda
   static const Map<String, String> _specialLabels = {
@@ -84,7 +86,7 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
     setState(() => isPersembahanLoading = true);
     try {
       final response = await http.get(
-        Uri.parse("${ApiConfig.baseUrl}/get_persembahan.php?api_key=${ApiConfig.apiKey}&user_id=${widget.userId}"),
+        Uri.parse("${ApiConfig.baseUrl}/get_persembahan.php?api_key=${ApiConfig.apiKey}&user_id=${widget.userId}&year=$selectedYear"),
       ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
@@ -103,7 +105,7 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
     setState(() => isDiakoniaLoading = true);
     try {
       final response = await http.get(
-        Uri.parse("${ApiConfig.baseUrl}/get_diakonia_sosial.php?api_key=${ApiConfig.apiKey}&user_id=${widget.userId}"),
+        Uri.parse("${ApiConfig.baseUrl}/get_diakonia_sosial.php?api_key=${ApiConfig.apiKey}&user_id=${widget.userId}&year=$selectedYear"),
       ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
@@ -342,6 +344,51 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            // Year Filter
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 2))],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    "Filter Tahun",
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        value: selectedYear,
+                        onChanged: (int? newValue) {
+                          if (newValue != null) {
+                            setState(() => selectedYear = newValue);
+                            _loadPersembahanDanDiakonia();
+                          }
+                        },
+                        items: yearList.map<DropdownMenuItem<int>>((v) => DropdownMenuItem<int>(
+                          value: v,
+                          child: Text("Tahun $v", style: const TextStyle(fontSize: 13)),
+                        )).toList(),
+                        icon: Icon(Icons.arrow_drop_down, color: Colors.blue[700]),
+                        style: TextStyle(color: Colors.blue[900], fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
             _buildPersembahanCard(),
             const SizedBox(height: 15),
             _buildDiakoniaCard(),
@@ -352,6 +399,16 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
   }
 
   Widget _buildPersembahanCard() {
+    // Group data by jenis_pemasukan
+    Map<String, List<dynamic>> groupedData = {};
+    for (var item in persembahanList) {
+      String category = item['jenis_pemasukan']?.toString() ?? 'Lainnya';
+      if (!groupedData.containsKey(category)) {
+        groupedData[category] = [];
+      }
+      groupedData[category]!.add(item);
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -395,45 +452,58 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
                     : ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        itemCount: persembahanList.length,
-                        itemBuilder: (context, index) {
-                          final item = persembahanList[index];
-                          num jumlah = num.tryParse(item['total_jumlah']?.toString() ?? '0') ?? 0;
+                        itemCount: groupedData.length,
+                        itemBuilder: (context, categoryIndex) {
+                          String category = groupedData.keys.elementAt(categoryIndex);
+                          List<dynamic> items = groupedData[category]!;
+                          
                           return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.only(bottom: 16),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            item['nama_pemasukan'] ?? '-',
-                                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
-                                          ),
-                                          if (item['jenis_pemasukan'] != null && item['jenis_pemasukan'].toString().isNotEmpty)
-                                            Text(
-                                              item['jenis_pemasukan'],
-                                              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                    Text(
-                                      _formatIDR(jumlah),
-                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green[700]),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
+                                // Category header
                                 Text(
-                                  _formatDatePersembahan(item['tgl_pelean']),
-                                  style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                                  category,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF1E293B),
+                                  ),
                                 ),
+                                const SizedBox(height: 8),
+                                // Items under category
+                                ...items.map((item) {
+                                  num jumlah = num.tryParse(item['total_jumlah']?.toString() ?? '0') ?? 0;
+                                  String tgl = _formatDatePersembahan(item['tgl_pelean']);
+                                  String kepada = item['nama_pemasukan']?.toString() ?? '-';
+                                  
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            "$tgl - kepada $kepada",
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Color(0xFF64748B),
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          "Total: ${_formatIDR(jumlah)}",
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green[700],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
                               ],
                             ),
                           );

@@ -51,7 +51,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final String _apiBaseUrl = ApiConfig.baseUrl;
 
   final List<String> bannerImages = [
-    'assets/gereja.jpg',
     'assets/hkbp.jpeg',
     'assets/sekre_main.jpeg',
     'assets/sekre1.jpeg',
@@ -237,8 +236,8 @@ class _HomeScreenState extends State<HomeScreen> {
       fetchedData.sort((a, b) {
         String wijkA = a['wijk']?.toString() ?? '';
         String wijkB = b['wijk']?.toString() ?? '';
-        int umurA = a['umur_pernikahan'] is int ? a['umur_pernikahan'] : int.tryParse(a['umur_pernikahan'].toString()) ?? 0;
-        int umurB = b['umur_pernikahan'] is int ? b['umur_pernikahan'] : int.tryParse(b['umur_pernikahan'].toString()) ?? 0;
+        int umurA = a['umur'] is int ? a['umur'] : int.tryParse(a['umur']?.toString() ?? '0') ?? 0;
+        int umurB = b['umur'] is int ? b['umur'] : int.tryParse(b['umur']?.toString() ?? '0') ?? 0;
         int wijkCompare = wijkA.compareTo(wijkB);
         return wijkCompare != 0 ? wijkCompare : umurA.compareTo(umurB);
       });
@@ -626,7 +625,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ),
                               Text(
-                                "ke-${item['umur_pernikahan'] ?? '?'}",
+                                "ke-${item['umur'] ?? '-'}",
                                 style: const TextStyle(
                                   color: Color(0xFF64748B),
                                   fontSize: 12,
