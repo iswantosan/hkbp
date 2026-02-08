@@ -52,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<String> bannerImages = [
     'assets/gereja.jpg',
+    'assets/hkbp.jpeg',
     'assets/sekre_main.jpeg',
     'assets/sekre1.jpeg',
     'assets/sekre2.jpeg',
@@ -97,13 +98,41 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> fetchWelcomeData() async {
     try {
       final uri = Uri.parse("$_apiBaseUrl/get_welcome.php?api_key=${ApiConfig.apiKey}");
-      final response = await http.get(uri).timeout(const Duration(seconds: 15));
+      final response = await http.get(uri).timeout(const Duration(seconds: 35));
       if (mounted && response.statusCode == 200 && response.body.trim().isNotEmpty) {
-        final decodedString = utf8.decode(base64.decode(response.body.trim()));
-        if (mounted) setState(() => welcomeData = json.decode(decodedString));
+        try {
+          final decodedString = utf8.decode(base64.decode(response.body.trim()));
+          final decodedData = json.decode(decodedString);
+          if (mounted && decodedData is Map) {
+            setState(() => welcomeData = Map<String, dynamic>.from(decodedData));
+          }
+        } catch (decodeError) {
+          ErrorHandler.logError(decodeError, StackTrace.current);
+        }
       }
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
+      // Retry sekali jika gagal (khusus untuk timeout atau network error)
+      if (mounted && welcomeData == null) {
+        await Future.delayed(const Duration(seconds: 3));
+        try {
+          final uri = Uri.parse("$_apiBaseUrl/get_welcome.php?api_key=${ApiConfig.apiKey}");
+          final response = await http.get(uri).timeout(const Duration(seconds: 35));
+          if (mounted && response.statusCode == 200 && response.body.trim().isNotEmpty) {
+            try {
+              final decodedString = utf8.decode(base64.decode(response.body.trim()));
+              final decodedData = json.decode(decodedString);
+              if (mounted && decodedData is Map) {
+                setState(() => welcomeData = Map<String, dynamic>.from(decodedData));
+              }
+            } catch (_) {
+              // Ignore decode error on retry
+            }
+          }
+        } catch (_) {
+          // Ignore retry error - akan tetap set loading false di finally
+        }
+      }
     } finally {
       if (mounted) setState(() => isWelcomeLoading = false);
     }
@@ -112,12 +141,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> fetchPortfolioNews() async {
     try {
       final uri = Uri.parse("$_apiBaseUrl/get_portfolio.php?api_key=${ApiConfig.apiKey}");
-      final response = await http.get(uri).timeout(const Duration(seconds: 15));
+      final response = await http.get(uri).timeout(const Duration(seconds: 30));
       if (mounted && response.statusCode == 200 && response.body.trim().isNotEmpty) {
-        final decodedString = utf8.decode(base64.decode(response.body.trim()));
-        final decodedData = json.decode(decodedString);
-        if (mounted && decodedData is List) {
-          setState(() => portfolioNews = decodedData);
+        try {
+          final decodedString = utf8.decode(base64.decode(response.body.trim()));
+          final decodedData = json.decode(decodedString);
+          if (mounted && decodedData is List) {
+            setState(() => portfolioNews = decodedData);
+          }
+        } catch (decodeError) {
+          ErrorHandler.logError(decodeError, StackTrace.current);
         }
       }
     } catch (e, stackTrace) {
@@ -130,12 +163,18 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> fetchBirthdayData() async {
     try {
       final uri = Uri.parse("$_apiBaseUrl/get_birthday_list.php?api_key=${ApiConfig.apiKey}");
-      final response = await http.get(uri).timeout(const Duration(seconds: 20));
+      final response = await http.get(uri).timeout(const Duration(seconds: 35));
       List<dynamic> fetchedData = [];
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['status'] == 'success' && data['data'] is List) {
-          fetchedData = data['data'];
+      if (response.statusCode == 200 && response.body.trim().isNotEmpty) {
+        try {
+          final data = json.decode(response.body);
+          if (data is Map && data['status'] == 'success' && data['data'] is List) {
+            fetchedData = data['data'];
+          } else if (data is List) {
+            fetchedData = data;
+          }
+        } catch (decodeError) {
+          ErrorHandler.logError(decodeError, StackTrace.current);
         }
       }
       fetchedData.sort((a, b) {
@@ -149,6 +188,30 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() => birthdayList = fetchedData);
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
+      // Retry sekali jika gagal
+      if (mounted && birthdayList.isEmpty) {
+        await Future.delayed(const Duration(seconds: 3));
+        try {
+          final uri = Uri.parse("$_apiBaseUrl/get_birthday_list.php?api_key=${ApiConfig.apiKey}");
+          final response = await http.get(uri).timeout(const Duration(seconds: 35));
+          if (response.statusCode == 200 && response.body.trim().isNotEmpty) {
+            try {
+              final data = json.decode(response.body);
+              List<dynamic> fetchedData = [];
+              if (data is Map && data['status'] == 'success' && data['data'] is List) {
+                fetchedData = data['data'];
+              } else if (data is List) {
+                fetchedData = data;
+              }
+              if (mounted) setState(() => birthdayList = fetchedData);
+            } catch (_) {
+              // Ignore decode error on retry
+            }
+          }
+        } catch (_) {
+          // Ignore retry error
+        }
+      }
     } finally {
       if (mounted) setState(() => isBirthdayLoading = false);
     }
@@ -157,12 +220,18 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> fetchAnniversaryData() async {
     try {
       final uri = Uri.parse("$_apiBaseUrl/get_anniversary_list.php?api_key=${ApiConfig.apiKey}");
-      final response = await http.get(uri).timeout(const Duration(seconds: 20));
+      final response = await http.get(uri).timeout(const Duration(seconds: 35));
       List<dynamic> fetchedData = [];
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['status'] == 'success' && data['data'] is List) {
-          fetchedData = data['data'];
+      if (response.statusCode == 200 && response.body.trim().isNotEmpty) {
+        try {
+          final data = json.decode(response.body);
+          if (data is Map && data['status'] == 'success' && data['data'] is List) {
+            fetchedData = data['data'];
+          } else if (data is List) {
+            fetchedData = data;
+          }
+        } catch (decodeError) {
+          ErrorHandler.logError(decodeError, StackTrace.current);
         }
       }
       fetchedData.sort((a, b) {
@@ -176,6 +245,26 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() => anniversaryList = fetchedData);
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
+      // Retry sekali jika gagal
+      if (mounted && anniversaryList.isEmpty) {
+        await Future.delayed(const Duration(seconds: 3));
+        try {
+          final uri = Uri.parse("$_apiBaseUrl/get_anniversary_list.php?api_key=${ApiConfig.apiKey}");
+          final response = await http.get(uri).timeout(const Duration(seconds: 35));
+          if (response.statusCode == 200 && response.body.trim().isNotEmpty) {
+            final data = json.decode(response.body);
+            List<dynamic> fetchedData = [];
+            if (data is Map && data['status'] == 'success' && data['data'] is List) {
+              fetchedData = data['data'];
+            } else if (data is List) {
+              fetchedData = data;
+            }
+            if (mounted) setState(() => anniversaryList = fetchedData);
+          }
+        } catch (_) {
+          // Ignore retry error
+        }
+      }
     } finally {
       if (mounted) setState(() => isAnniversaryLoading = false);
     }
@@ -338,56 +427,104 @@ class _HomeScreenState extends State<HomeScreen> {
     final weekText = "Minggu ke-$weekNumber $monthName $year";
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [Colors.amber.shade700, Colors.amber.shade500], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.amber.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))],
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(padding: EdgeInsets.only(top: 2.0, right: 12.0), child: Icon(Icons.cake_rounded, color: Colors.white, size: 28)),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("Ulang Tahun Minggu Ini", style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 2),
-                    Text(weekText, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12)),
-                  ],
-                ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [Colors.amber[700]!, Colors.amber[500]!]),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
               ),
-            ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.cake_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Ulang Tahun Minggu Ini",
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        weekText,
+                        style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          const Divider(color: Colors.white30, height: 24, thickness: 0.5),
-          ...groupedByWijk.entries.map((entry) {
-            String wijk = entry.key;
-            List<dynamic> items = entry.value;
-            return Column(
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
-                  child: Text(wijk, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, decoration: TextDecoration.underline, decorationColor: Colors.white54)),
-                ),
-                ...items.map((item) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
-                    child: Row(children: [
-                      const Icon(Icons.person, color: Colors.white70, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(item['nama_lengkap'] ?? 'N/A', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
-                      Text("${item['umur'] ?? '?'} thn", style: const TextStyle(color: Colors.white, fontSize: 13)),
-                    ]),
+                ...groupedByWijk.entries.map((entry) {
+                  String wijk = entry.key;
+                  List<dynamic> items = entry.value;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                        child: Text(
+                          wijk,
+                          style: const TextStyle(
+                            color: Color(0xFF1E293B),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      ...items.map((item) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12.0),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.person, color: Color(0xFF64748B), size: 16),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  item['nama_lengkap'] ?? 'N/A',
+                                  style: const TextStyle(
+                                    color: Color(0xFF1E293B),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Text(
+                                "${item['umur'] ?? '?'} thn",
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      if (entry != groupedByWijk.entries.last)
+                        const Divider(color: Color(0xFFE2E8F0), height: 24, thickness: 0.5),
+                    ],
                   );
                 }).toList(),
               ],
-            );
-          }).toList(),
+            ),
+          ),
         ],
       ),
     );
@@ -409,56 +546,104 @@ class _HomeScreenState extends State<HomeScreen> {
     final weekText = "Minggu ke-$weekNumber $monthName $year";
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [Colors.pink.shade600, Colors.pink.shade400], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.pink.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))],
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(padding: EdgeInsets.only(top: 2.0, right: 12.0), child: Icon(Icons.favorite_rounded, color: Colors.white, size: 28)),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("Anniversary Minggu Ini", style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 2),
-                    Text(weekText, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12)),
-                  ],
-                ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [Colors.pink[600]!, Colors.pink[400]!]),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
               ),
-            ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.favorite_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Anniversary Minggu Ini",
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        weekText,
+                        style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          const Divider(color: Colors.white30, height: 24, thickness: 0.5),
-          ...groupedByWijk.entries.map((entry) {
-            String wijk = entry.key;
-            List<dynamic> items = entry.value;
-            return Column(
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
-                  child: Text(wijk, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, decoration: TextDecoration.underline, decorationColor: Colors.white54)),
-                ),
-                ...items.map((item) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
-                    child: Row(children: [
-                      const Icon(Icons.family_restroom, color: Colors.white70, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text("Kel. ${item['nama_lengkap'] ?? 'N/A'}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
-                      Text("ke-${item['umur'] ?? '?'}", style: const TextStyle(color: Colors.white, fontSize: 13)),
-                    ]),
+                ...groupedByWijk.entries.map((entry) {
+                  String wijk = entry.key;
+                  List<dynamic> items = entry.value;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                        child: Text(
+                          wijk,
+                          style: const TextStyle(
+                            color: Color(0xFF1E293B),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      ...items.map((item) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12.0),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.family_restroom, color: Color(0xFF64748B), size: 16),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  "Kel. ${item['nama_lengkap'] ?? 'N/A'}",
+                                  style: const TextStyle(
+                                    color: Color(0xFF1E293B),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Text(
+                                "ke-${item['umur_pernikahan'] ?? '?'}",
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      if (entry != groupedByWijk.entries.last)
+                        const Divider(color: Color(0xFFE2E8F0), height: 24, thickness: 0.5),
+                    ],
                   );
                 }).toList(),
               ],
-            );
-          }).toList(),
+            ),
+          ),
         ],
       ),
     );
@@ -575,21 +760,71 @@ class _HomeScreenState extends State<HomeScreen> {
   );
 
   Widget _buildModernBanner() => SizedBox(
-    height: 150,
+    height: 200,
     child: PageView.builder(
       controller: _pageController,
       itemCount: bannerImages.length,
       onPageChanged: (index) => setState(() => _currentPage = index),
-      itemBuilder: (context, index) => Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4.0),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Image.asset(bannerImages[index], fit: BoxFit.cover, errorBuilder: (c, e, s) => Container(
-            decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(20)),
-            child: const Center(child: Icon(Icons.error_outline, color: Colors.red, size: 40)),
-          )),
+      itemBuilder: (context, index) => ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Image.asset(
+          bannerImages[index],
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: 200,
+          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+              if (wasSynchronouslyLoaded) {
+                return child;
+              }
+              return AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: frame != null
+                    ? child
+                    : Container(
+                        key: ValueKey('loading-$index'),
+                        width: double.infinity,
+                        height: 200,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[200],
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                          ),
+                        ),
+                      ),
+              );
+            },
+            errorBuilder: (c, e, s) {
+              // Log error untuk debugging
+              print('Error loading image: ${bannerImages[index]}');
+              print('Error: $e');
+              return Container(
+                width: double.infinity,
+                height: 200,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline, color: Colors.red, size: 40),
+                      SizedBox(height: 8),
+                      Text(
+                        'Gambar tidak dapat dimuat',
+                        style: TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
         ),
-      ),
     ),
   );
 

@@ -408,9 +408,19 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Expanded(
-                                      child: Text(
-                                        item['nama_pemasukan'] ?? '-',
-                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            item['nama_pemasukan'] ?? '-',
+                                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                          ),
+                                          if (item['jenis_pemasukan'] != null && item['jenis_pemasukan'].toString().isNotEmpty)
+                                            Text(
+                                              item['jenis_pemasukan'],
+                                              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
+                                            ),
+                                        ],
                                       ),
                                     ),
                                     Text(
@@ -492,9 +502,19 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Expanded(
-                                      child: Text(
-                                        item['nama_pengeluaran'] ?? '-',
-                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            item['nama_pengeluaran'] ?? '-',
+                                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                          ),
+                                          if (item['jenis_pengeluaran'] != null && item['jenis_pengeluaran'].toString().isNotEmpty)
+                                            Text(
+                                              item['jenis_pengeluaran'],
+                                              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
+                                            ),
+                                        ],
                                       ),
                                     ),
                                     Text(

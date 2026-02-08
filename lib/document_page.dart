@@ -57,29 +57,44 @@ class DocumentPage extends StatelessWidget {
     try {
       // 2. REQUEST IZIN STORAGE (LOGIC ANDROID 10-13+)
       if (Platform.isAndroid) {
-        // Untuk Android 13+ (API 33+), gunakan READ_MEDIA atau tetap pakai storage
-        // Untuk Android 11+ (API 30+), coba manageExternalStorage dulu
-        // Untuk Android 10 ke bawah, pakai storage biasa
-        
         bool hasPermission = false;
         
         // Cek Android version
         if (await _isAndroid11OrAbove()) {
-          // Android 11+ - coba manageExternalStorage
-          var manageStatus = await Permission.manageExternalStorage.status;
-          if (!manageStatus.isGranted) {
-            manageStatus = await Permission.manageExternalStorage.request();
+          // Android 11+ menggunakan scoped storage, tidak perlu permission khusus untuk download
+          // Tapi tetap coba request storage permission untuk kompatibilitas
+          var storageStatus = await Permission.storage.status;
+          if (!storageStatus.isGranted) {
+            storageStatus = await Permission.storage.request();
           }
+          hasPermission = storageStatus.isGranted || storageStatus.isLimited;
           
-          if (manageStatus.isGranted) {
-            hasPermission = true;
-          } else {
-            // Fallback ke storage permission
-            var storageStatus = await Permission.storage.status;
-            if (!storageStatus.isGranted) {
-              storageStatus = await Permission.storage.request();
+          // Jika masih ditolak, tetap lanjutkan karena Android 11+ bisa download tanpa permission
+          if (!hasPermission) {
+            // Coba request lagi dengan pesan yang lebih jelas
+            if (context.mounted) {
+              final result = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Izin Storage Diperlukan'),
+                  content: const Text('Aplikasi memerlukan izin storage untuk menyimpan file. Silakan aktifkan di Pengaturan.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Batal'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Buka Pengaturan'),
+                    ),
+                  ],
+                ),
+              );
+              if (result == true) {
+                await openAppSettings();
+              }
+              return;
             }
-            hasPermission = storageStatus.isGranted;
           }
         } else {
           // Android 10 ke bawah - pakai storage permission
@@ -88,13 +103,32 @@ class DocumentPage extends StatelessWidget {
             storageStatus = await Permission.storage.request();
           }
           hasPermission = storageStatus.isGranted;
-        }
-
-        if (!hasPermission) {
-          if (context.mounted) {
-            _showSnackBar(context, "Izin ditolak. Aktifkan izin storage di Pengaturan.", Colors.red);
+          
+          if (!hasPermission) {
+            if (context.mounted) {
+              final result = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Izin Storage Diperlukan'),
+                  content: const Text('Aplikasi memerlukan izin storage untuk menyimpan file. Silakan aktifkan di Pengaturan.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Batal'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Buka Pengaturan'),
+                    ),
+                  ],
+                ),
+              );
+              if (result == true) {
+                await openAppSettings();
+              }
+            }
+            return;
           }
-          return;
         }
       }
 
