@@ -1,30 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http; // Import library http
-import 'dart:convert'; // Untuk jsonEncode dan jsonDecode
+import 'package:hkbp/profile_page.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'home_screen.dart';
 import 'register_page.dart';
 import 'config/api_config.dart';
 import 'utils/error_handler.dart';
-import 'services/auth_service.dart'; // Auth service untuk save login data
-
+import 'services/auth_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
+
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
 
 class _LoginPageState extends State<LoginPage> {
   bool _isObscure = true;
-  bool _isLoading = false; // Indikator loading
+  bool _isLoading = false;
 
-  // PERBAIKAN: Mengganti nama controller agar lebih sesuai
   final TextEditingController _useridController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  // Fungsi Login ke Database via API PHP
   Future<void> _handleLogin() async {
-    // PERBAIKAN: Menggunakan controller yang benar
     String userid = _useridController.text.trim();
     String pass = _passwordController.text;
 
@@ -33,65 +31,43 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
-     var url = Uri.parse("${ApiConfig.baseUrl}/login.php?api_key=${ApiConfig.apiKey}");
-     // var url = Uri.parse("${ApiConfig.devBaseUrl}/login.php?api_key=${ApiConfig.apiKey}");
-
-      // --- PERBAIKAN UTAMA: Mengirim data sebagai JSON ---
+      var url = Uri.parse("${ApiConfig.baseUrl}/login.php?api_key=${ApiConfig.apiKey}");
       var response = await http.post(
         url,
-        headers: {
-          // Memberitahu server bahwa kita mengirim data JSON
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode({
-          // Menggunakan key yang diharapkan oleh login.php
-          "userid": userid,
-          "pass": pass,
-        }),
-      ).timeout(const Duration(seconds: 20)); // Tambahkan timeout untuk koneksi lambat
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
+        body: jsonEncode({"userid": userid, "pass": pass}),
+      ).timeout(const Duration(seconds: 20));
 
-      // Selalu decode body untuk mendapatkan pesan, bahkan saat gagal
       var data = jsonDecode(response.body);
 
-      // --- PERBAIKAN LOGIKA: Menangani respons baru dari API ---
       if (response.statusCode == 200 && data['status'] == 'success') {
-        // Jika Benar, ambil data user dan pindah ke HomeScreen
         final int userId = data['id_jemaat'];
         final String userFullName = data['nama_kepala_keluarga'];
 
-        // Simpan data login untuk auto-login di next session
+        // Simpan sesi login untuk penggunaan di masa mendatang
         await AuthService.saveLoginData(userId, userFullName);
 
         if (!mounted) return;
+
+        // Arahkan ke ProfilePage setelah login berhasil
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            // --- PERBAIKAN NAVIGASI: Teruskan data yang didapat ke HomeScreen ---
-            builder: (context) => HomeScreen(
-              userId: userId,
-              userFullName: userFullName,
-            ),
+            builder: (context) => ProfilePage(userId: userId),
           ),
         );
+
       } else {
-        // Jika Gagal, tampilkan pesan error dari API
         _showError(data['message'] ?? 'Terjadi kesalahan yang tidak diketahui.');
       }
     } catch (e) {
-      // Menangkap error koneksi (timeout, no internet, DNS, SSL, dll)
       ErrorHandler.logError(e);
       _showError(ErrorHandler.getUserFriendlyMessage(e));
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -109,7 +85,6 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
-    // Selalu dispose controller untuk mencegah memory leak
     _useridController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -170,10 +145,7 @@ class _LoginPageState extends State<LoginPage> {
                             const Text("Silahkan masuk ke akun jemaat Anda",
                                 style: TextStyle(color: Colors.grey)),
                             const SizedBox(height: 30),
-
-                            // Input User ID
                             TextField(
-                              // PERBAIKAN: Menggunakan controller yang benar
                               controller: _useridController,
                               decoration: InputDecoration(
                                 hintText: "User ID",
@@ -186,8 +158,6 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ),
                             const SizedBox(height: 15),
-
-                            // Input Password
                             TextField(
                               controller: _passwordController,
                               obscureText: _isObscure,
@@ -209,30 +179,59 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ),
                             const SizedBox(height: 30),
+                            // --- PERUBAHAN: Tombol Batal dan Masuk dalam satu Row ---
+                            Row(
+                              children: [
+                                // Tombol Masuk
+                                Expanded(
+                                  child: ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.blue[900],
+                                      minimumSize: const Size(0, 55),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(15)),
+                                    ),
+                                    onPressed: _handleLogin,
+                                    child: const Text("MASUK",
+                                        style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                                const SizedBox(width: 15),
+                                // Tombol Batal
+                                Expanded(
+                                  child: OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      minimumSize: const Size(0, 55),
+                                      side: BorderSide(color: Colors.grey[300]!),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(15)),
+                                    ),
+                                    onPressed: () {
+                                      // Kembali ke halaman sebelumnya
+                                      Navigator.of(context).pop();
+                                    },
+                                    child: Text("Batal",
+                                        style: TextStyle(
+                                            color: Colors.grey[700],
+                                            fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                                const SizedBox(width: 15),
 
-                            // Tombol Masuk
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue[900],
-                                minimumSize: const Size(double.infinity, 55),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(15)),
-                              ),
-                              onPressed: _handleLogin,
-                              child: const Text("MASUK",
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold)),
+
+
+                              ],
                             ),
-                            
-                            // Spacer untuk mendorong konten ke bawah
+
+
+
+                            // --- AKHIR PERUBAHAN ---
                             const Expanded(child: SizedBox()),
-                            
-                            // Link Daftar dan Versi Aplikasi di kanan bawah
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                // Versi aplikasi di kiri
                                 const Text(
                                   "Versi 1.0.0",
                                   style: TextStyle(
@@ -240,7 +239,6 @@ class _LoginPageState extends State<LoginPage> {
                                     fontSize: 12,
                                   ),
                                 ),
-                                // Link Daftar di kanan
                                 TextButton(
                                   onPressed: () {
                                     Navigator.push(

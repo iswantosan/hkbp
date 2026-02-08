@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
-import 'contact_page.dart'; // Import halaman kontak untuk navigasi
-import 'package:url_launcher/url_launcher.dart'; // Import untuk membuka URL
+import 'package:intl/intl.dart';
+import 'package:table_calendar/table_calendar.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:http/http.dart' as http; // <-- Import http
+import 'dart:convert'; // <-- Import convert
+import 'config/api_config.dart'; // <-- Import config API Anda
+import 'utils/error_handler.dart'; // <-- Import error handler
+import 'contact_page.dart';
 
 class GedungSerbagunaPage extends StatefulWidget {
   const GedungSerbagunaPage({super.key});
@@ -13,7 +19,6 @@ class _GedungSerbagunaPageState extends State<GedungSerbagunaPage> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
 
-  // Daftar path gambar lokal dari folder assets
   final List<String> galleryImages = [
     'assets/sekre_main.jpeg',
     'assets/sekre1.jpeg',
@@ -22,17 +27,117 @@ class _GedungSerbagunaPageState extends State<GedungSerbagunaPage> {
     'assets/sekre4.jpeg',
   ];
 
+  // --- PERUBAHAN 1: Modifikasi State ---
+  Map<DateTime, List<Map<String, dynamic>>> _bookingsByDate = {};
+  bool _isLoading = true; // State untuk loading indicator
+
+  CalendarFormat _calendarFormat = CalendarFormat.month;
+  DateTime _focusedDay = DateTime.now();
+  DateTime? _selectedDay;
+  List<Map<String, dynamic>> _selectedBookings = [];
+  // `allBookings` (dummy data) dihapus dari sini
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDay = _focusedDay;
+    fetchBookings(); // Panggil fungsi untuk mengambil data dari API
+  }
+
+  // --- PERUBAHAN 2: Fungsi Baru untuk Fetch Data dari API ---
+  Future<void> fetchBookings() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final uri = Uri.parse("${ApiConfig.baseUrl}/get_booking_list.php?api_key=${ApiConfig.apiKey}");
+      final response = await http.get(uri).timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (mounted && data['status'] == 'success' && data['data'] is List) {
+          final List<dynamic> bookingsFromApi = data['data'];
+          final Map<DateTime, List<Map<String, dynamic>>> groupedBookings = {};
+
+          for (var booking in bookingsFromApi) {
+            // Parsing tanggal dan waktu dari string
+            try {
+              final DateTime date = DateFormat('yyyy-MM-dd').parse(booking['tglbooking']);
+              final TimeOfDay time = TimeOfDay(
+                hour: int.parse(booking['waktu'].split(':')[0]),
+                minute: int.parse(booking['waktu'].split(':')[1]),
+              );
+
+              // Normalisasi tanggal (kunci map)
+              final DateTime normalizedDate = DateTime(date.year, date.month, date.day);
+
+              final bookingData = {
+                'nama_pembooking': booking['nm_pembooking'],
+                'tujuan_acara': booking['tujuan'],
+                'tanggal': date, // Simpan tanggal asli
+                'jam_acara': time, // Simpan TimeOfDay
+              };
+
+              if (groupedBookings[normalizedDate] == null) {
+                groupedBookings[normalizedDate] = [];
+              }
+              groupedBookings[normalizedDate]!.add(bookingData);
+
+            } catch (e) {
+              print("Error parsing booking data: $e");
+              // Lewati data yang formatnya salah
+            }
+          }
+
+          setState(() {
+            _bookingsByDate = groupedBookings;
+            // Muat booking untuk hari yang dipilih saat ini
+            _selectedBookings = _getBookingsForDay(_selectedDay!);
+          });
+        }
+      }
+    } catch (e, stackTrace) {
+      ErrorHandler.logError(e, stackTrace);
+      if(mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memuat jadwal booking: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+
   @override
   void dispose() {
     _pageController.dispose();
     super.dispose();
   }
 
-  // Fungsi untuk membuka URL
+  List<Map<String, dynamic>> _getBookingsForDay(DateTime day) {
+    DateTime normalizedDay = DateTime(day.year, day.month, day.day);
+    return _bookingsByDate[normalizedDay] ?? [];
+  }
+
+  void _onDaySelected(DateTime selectedDay, DateTime focusedDay) {
+    if (!isSameDay(_selectedDay, selectedDay)) {
+      setState(() {
+        _selectedDay = selectedDay;
+        _focusedDay = focusedDay;
+        _selectedBookings = _getBookingsForDay(selectedDay);
+      });
+    }
+  }
+
   Future<void> _launchURL(String url) async {
     final Uri uri = Uri.parse(url);
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      // Jika gagal, tampilkan snackbar
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Tidak dapat membuka $url')),
@@ -44,11 +149,10 @@ class _GedungSerbagunaPageState extends State<GedungSerbagunaPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
+      backgroundColor: const Color(0xFFF8FAFC),
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // Header Halaman yang konsisten dengan HomeScreen
           SliverToBoxAdapter(
             child: Container(
               padding: const EdgeInsets.fromLTRB(15, 60, 25, 30),
@@ -56,180 +160,106 @@ class _GedungSerbagunaPageState extends State<GedungSerbagunaPage> {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [Colors.blue[900]!, Colors.blue[700]!], // Warna disesuaikan dengan ikon menu
+                  colors: [Colors.blue[900]!, Colors.blue[700]!],
                 ),
                 borderRadius: const BorderRadius.only(
                   bottomLeft: Radius.circular(30),
                   bottomRight: Radius.circular(30),
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
-                      ),
-                      const Icon(Icons.home_work_outlined, color: Colors.white, size: 24), // Ikon yang sesuai
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text(
-                          "Gedung Serba Guna",
-                          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  // ...
-                  const Padding(
-                    padding: EdgeInsets.only(left: 45), // <-- INI PENYEBABNYA
-                    child: Text(
-                      "Informasi fasilitas dan pemesanan",
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                  InkWell(
+                    onTap: () => Navigator.pop(context),
+                    child: const CircleAvatar(
+                      radius: 22,
+                      backgroundColor: Colors.white24,
+                      child: Icon(Icons.arrow_back, color: Colors.white, size: 20),
                     ),
                   ),
-//...
-
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Gedung Serba Guna",
+                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          "Informasi, fasilitas, dan jadwal booking",
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const CircleAvatar(
+                    radius: 22,
+                    backgroundColor: Colors.white24,
+                    child: Icon(Icons.home_work, color: Colors.white, size: 22),
+                  )
                 ],
               ),
             ),
           ),
-          // Konten halaman
-          SliverList(
-            delegate: SliverChildListDelegate(
-              [
-                // 1. Galeri Gambar
-                Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: _buildImageGallery(),
-                ),
-
-                // 2. Detail Fasilitas
-                _buildSectionCard(
-                  title: "Fasilitas & Kapasitas",
-                  icon: Icons.info_outline,
-                  iconColor: Colors.blue,
-                  children: [
-                    _buildInfoRow(Icons.people_alt_outlined, "Kapasitas", "150 - 200 Pax"),
-                    _buildInfoRow(Icons.chair_sharp, "Kursi Futura", "Tersedia"),
-                    _buildInfoRow(Icons.table_bar_outlined, "Meja Panjang", "Tersedia"),
-                    _buildInfoRow(Icons.volume_up_outlined, "Sound System", "Tersedia"),
-                    _buildInfoRow(Icons.mic_none_outlined, "Mikrofon", "Tersedia"),
-                    _buildInfoRow(Icons.speaker_group_outlined, "Speaker", "Tersedia"),
-                    _buildInfoRow(Icons.wc_outlined, "Toilet", "Tersedia (Pria & Wanita)"),
-                    _buildInfoRow(Icons.local_parking, "Parkiran", "Tersedia"),
-                    _buildInfoRow(Icons.camera_outdoor, "CCTV", "Tersedia"),
-                  ],
-                ),
-
-                // 3. Informasi Alamat
-                _buildSectionCard(
-                  title: "Alamat",
-                  icon: Icons.location_on_outlined,
-                  iconColor: Colors.red,
-                  children: [
-                    _buildInfoRow(Icons.location_city_rounded, "Lokasi", "Jl. Raya Pondok Kopi Raya No.1, Jakarta Timur"),
-                    _buildInfoRow(Icons.map_outlined, "Google Maps", "Lihat Peta", isLink: true, onTap: () {
-                      _launchURL("https://maps.app.goo.gl/9ZBpscbR18KkipFGA"); // Ganti dengan link Google Maps Anda
-                    }),
-                  ],
-                ),
-
-                // 4. Jadwal Booking
-                _buildSectionCard(
-                  title: "Jadwal Booking",
-                  icon: Icons.calendar_month_outlined,
-                  iconColor: Colors.green,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8.0),
-                      child: Text(
-                        "Untuk mengetahui jadwal yang tersedia, silakan hubungi sekretariat.",
-                        style: TextStyle(color: Colors.black54, height: 1.5),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate(
+                [
+                  const SizedBox(height: 20),
+                  _buildImageGallery(),
+                  const SizedBox(height: 25),
+                  _buildSectionCard(
+                    title: "Fasilitas & Kapasitas",
+                    icon: Icons.info_outline,
+                    iconColor: Colors.blue,
+                    children: [
+                      _buildInfoRow(Icons.people_alt_outlined, "Kapasitas", "150 - 200 Pax"),
+                      _buildInfoRow(Icons.chair_sharp, "Kursi Futura", "Tersedia"),
+                      _buildInfoRow(Icons.table_bar_outlined, "Meja Panjang", "Tersedia"),
+                      _buildInfoRow(Icons.volume_up_outlined, "Sound System", "Tersedia"),
+                      _buildInfoRow(Icons.mic_none_outlined, "Mikrofon", "Tersedia"),
+                      _buildInfoRow(Icons.speaker_group_outlined, "Speaker", "Tersedia"),
+                      _buildInfoRow(Icons.wc_outlined, "Toilet", "Tersedia (Pria & Wanita)"),
+                      _buildInfoRow(Icons.local_parking, "Parkiran", "Tersedia"),
+                      _buildInfoRow(Icons.camera_outdoor, "CCTV", "Tersedia"),
+                    ],
+                  ),
+                  _buildSectionCard(
+                    title: "Alamat",
+                    icon: Icons.location_on_outlined,
+                    iconColor: Colors.red,
+                    children: [
+                      _buildInfoRow(Icons.location_city_rounded, "Lokasi", "Jl. Arabika I No.6, RT.9/RW.6, Pd. Kopi,Jakarta Timur"),
+                      _buildInfoRow(Icons.map_outlined, "Google Maps", "Lihat Peta", isLink: true, onTap: () {
+                        _launchURL("https://maps.app.goo.gl/5qHgj67SLxr53UubA");
+                      }),
+                    ],
+                  ),
+                  _buildCalendarCard(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 30),
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => const ContactPage()));
+                      },
+                      icon: const Icon(Icons.phone_in_talk_outlined),
+                      label: const Text("Hubungi Sekretariat"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal[700],
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
-                    )
-                  ],
-                ),
-
-                // 5. Cara Booking
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      // Arahkan ke halaman Hubungi Kami
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => const ContactPage()));
-                    },
-                    icon: const Icon(Icons.phone_in_talk_outlined),
-                    label: const Text("Hubungi Sekretariat"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal[700],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Widget untuk membangun galeri gambar
-  Widget _buildImageGallery() {
-    return Container(
-      height: 250,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)],
-      ),
-      child: Stack(
-        alignment: Alignment.bottomCenter,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: galleryImages.length,
-              onPageChanged: (page) => setState(() => _currentPage = page),
-              itemBuilder: (context, index) {
-                return Image.asset(
-                  galleryImages[index],
-                  fit: BoxFit.cover,
-                  errorBuilder: (c, e, s) => Container(
-                    color: Colors.grey[200],
-                    child: const Icon(Icons.error_outline, color: Colors.redAccent),
-                  ),
-                );
-              },
-            ),
-          ),
-          // Indikator titik
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                galleryImages.length,
-                    (index) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: _currentPage == index ? 12 : 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: _currentPage == index ? Colors.white : Colors.white.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
+                  const SizedBox(height: 20),
+                ],
               ),
             ),
           ),
@@ -238,7 +268,36 @@ class _GedungSerbagunaPageState extends State<GedungSerbagunaPage> {
     );
   }
 
-  // Widget untuk membangun kartu bagian informasi
+  Widget _buildImageGallery() {
+    return SizedBox(
+      height: 150,
+      child: PageView.builder(
+        controller: _pageController,
+        itemCount: galleryImages.length,
+        onPageChanged: (page) => setState(() => _currentPage = page),
+        itemBuilder: (context, index) {
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4.0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Image.asset(
+                galleryImages[index],
+                fit: BoxFit.cover,
+                errorBuilder: (c, e, s) => Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(Icons.error_outline, color: Colors.redAccent),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildSectionCard({
     required String title,
     required IconData icon,
@@ -246,12 +305,12 @@ class _GedungSerbagunaPageState extends State<GedungSerbagunaPage> {
     required List<Widget> children,
   }) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(bottom: 15),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -260,7 +319,7 @@ class _GedungSerbagunaPageState extends State<GedungSerbagunaPage> {
             children: [
               Icon(icon, color: iconColor),
               const SizedBox(width: 10),
-              Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+              Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
             ],
           ),
           const Divider(height: 25, thickness: 0.5),
@@ -270,10 +329,84 @@ class _GedungSerbagunaPageState extends State<GedungSerbagunaPage> {
     );
   }
 
-  // Widget untuk membangun baris info
+  // --- PERUBAHAN 3: Menambahkan Loading Indicator ---
+  Widget _buildCalendarCard() {
+    return _buildSectionCard(
+      title: "Jadwal Booking",
+      icon: Icons.calendar_month_outlined,
+      iconColor: Colors.green,
+      children: [
+        TableCalendar(
+          locale: 'id_ID',
+          firstDay: DateTime.utc(2020, 1, 1),
+          lastDay: DateTime.utc(2030, 12, 31),
+          focusedDay: _focusedDay,
+          calendarFormat: _calendarFormat,
+          selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+          onDaySelected: _onDaySelected,
+          eventLoader: _getBookingsForDay,
+          onFormatChanged: (format) {
+            if (_calendarFormat != format) {
+              setState(() => _calendarFormat = format);
+            }
+          },
+          onPageChanged: (focusedDay) {
+            _focusedDay = focusedDay;
+          },
+          calendarStyle: CalendarStyle(
+            markerDecoration: BoxDecoration(color: Colors.purple[700], shape: BoxShape.circle),
+            todayDecoration: BoxDecoration(color: Colors.blue[200], shape: BoxShape.circle),
+            selectedDecoration: BoxDecoration(color: Colors.blue[900], shape: BoxShape.circle),
+          ),
+          headerStyle: const HeaderStyle(
+            titleCentered: true,
+            formatButtonShowsNext: false,
+          ),
+        ),
+        const SizedBox(height: 16.0),
+        const Divider(),
+        const SizedBox(height: 8.0),
+        if (_isLoading)
+          const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()))
+        else
+          ..._buildBookingDetails(_selectedBookings),
+      ],
+    );
+  }
+
+  List<Widget> _buildBookingDetails(List<Map<String, dynamic>> bookings) {
+    if (bookings.isEmpty) {
+      return [
+        const Center(
+          child: Padding(
+            padding: EdgeInsets.all(12.0),
+            child: Text("Tidak ada jadwal ter-booking pada tanggal ini.", style: TextStyle(color: Colors.black54)),
+          ),
+        )
+      ];
+    }
+    return bookings.map((booking) {
+      final formattedTime = booking['jam_acara'].format(context);
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade200), borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(booking['tujuan_acara'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B))),
+            const SizedBox(height: 8),
+            _buildInfoRow(Icons.person, "Pembooking", booking['nama_pembooking']),
+            _buildInfoRow(Icons.access_time_filled, "Jam", formattedTime),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
   Widget _buildInfoRow(IconData icon, String label, String value, {bool isLink = false, VoidCallback? onTap}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: InkWell(
         onTap: isLink ? onTap : null,
         borderRadius: BorderRadius.circular(8),
@@ -286,8 +419,8 @@ class _GedungSerbagunaPageState extends State<GedungSerbagunaPage> {
               child: Text(
                 value,
                 style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: isLink ? Colors.blue[700] : Colors.black87,
+                  fontWeight: FontWeight.w600,
+                  color: isLink ? Colors.blue[700] : const Color(0xFF334155),
                   decoration: isLink ? TextDecoration.underline : TextDecoration.none,
                   decorationColor: Colors.blue[700],
                 ),

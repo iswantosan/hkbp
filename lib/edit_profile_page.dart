@@ -19,10 +19,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
   bool _isLoading = false;
   late Map<String, TextEditingController> _controllers;
 
-  // --- STATE UNTUK NILAI DROPDOWN ---
+  // State untuk nilai dropdown
   final Map<String, String?> _dropdownValues = {};
   final List<String> _statusOptions = ["Menikah", "Belum Menikah", "Janda/Duda", "Almarhum"];
-  final List<String> _wilayahOptions = ["Wijk 1", "Wijk 2", "Wijk 3", "Wijk 4", "Wijk 5", "Wijk 6"];
+  final List<String> _wilayahOptions = [
+    "Wijk I", "Wijk II", "Wijk III", "Wijk IV", "Wijk V", "Wijk VI", "Wijk VII", "Wijk VIII", "Wijk IX", "Wijk X",
+    "Wijk XI", "Wijk XII", "Wijk XIII", "Wijk XIV", "Wijk XV", "Wijk XVI"
+  ];
 
   @override
   void initState() {
@@ -31,13 +34,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
       for (var key in widget.userData.keys)
         key: TextEditingController(text: widget.userData[key]?.toString() ?? '')
     };
+    _initializeDropdowns();
+  }
 
-    // Inisialisasi semua nilai awal untuk dropdown
+  void _initializeDropdowns() {
     _dropdownValues['status_pernikahan_kepala_rumah_tangga'] = _getInitialDropdownValue(widget.userData['status_pernikahan_kepala_rumah_tangga'], _statusOptions);
     _dropdownValues['stspasangan'] = _getInitialDropdownValue(widget.userData['stspasangan'], _statusOptions);
     _dropdownValues['wilayah'] = _getInitialDropdownValue(widget.userData['wilayah'], _wilayahOptions);
 
-    // --- PERBAIKAN: Inisialisasi nilai awal untuk dropdown status anak ---
     for (int i = 1; i <= 5; i++) {
       String suffix = _getSuffix(i);
       String key = 'status_pernikahan_anak_$suffix';
@@ -45,19 +49,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
     }
   }
 
-  // Fungsi helper untuk mendapatkan suffix nama ('pertama', 'kedua', dst.)
   String _getSuffix(int index) {
-    switch (index) {
-      case 1: return 'pertama';
-      case 2: return 'kedua';
-      case 3: return 'ketiga';
-      case 4: return 'keempat';
-      case 5: return 'kelima';
-      default: return '';
-    }
+    const suffixes = ['pertama', 'kedua', 'ketiga', 'keempat', 'kelima'];
+    return suffixes[index - 1];
   }
 
-  // Fungsi helper untuk memastikan nilai awal ada di dalam daftar options, jika tidak, kembalikan null
   String? _getInitialDropdownValue(String? value, List<String> options) {
     if (value != null && options.contains(value)) {
       return value;
@@ -67,16 +63,22 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   @override
   void dispose() {
-    _controllers.forEach((key, controller) {
-      controller.dispose();
-    });
+    _controllers.forEach((key, controller) => controller.dispose());
     super.dispose();
   }
 
+  // --- PERBAIKAN 2: Logika Date Picker ---
   Future<void> _selectDate(BuildContext context, String fieldKey) async {
     DateTime initialDate;
+    String currentValue = _controllers[fieldKey]!.text;
+
+    // Coba parse tanggal yang ada. Jika gagal atau nilainya tidak valid, gunakan tanggal hari ini.
     try {
-      initialDate = DateTime.parse(_controllers[fieldKey]!.text);
+      if (currentValue.isNotEmpty && currentValue != '0000-00-00' && currentValue != '1900-01-01') {
+        initialDate = DateTime.parse(currentValue);
+      } else {
+        initialDate = DateTime.now();
+      }
     } catch (_) {
       initialDate = DateTime.now();
     }
@@ -89,24 +91,18 @@ class _EditProfilePageState extends State<EditProfilePage> {
     );
 
     if (picked != null) {
-      String formattedDate = DateFormat('yyyy-MM-dd').format(picked);
       setState(() {
-        _controllers[fieldKey]!.text = formattedDate;
+        _controllers[fieldKey]!.text = DateFormat('yyyy-MM-dd').format(picked);
       });
     }
   }
 
-  bool _isDateField(String key) {
-    return key.toLowerCase().contains('tanggal');
-  }
-
-  // --- LOGIKA DIPERLUAS: Deteksi semua field yang menggunakan dropdown, termasuk status anak ---
-  bool _isDropdownField(String key) {
-    return key == 'status_pernikahan_kepala_rumah_tangga' ||
-        key == 'stspasangan' ||
-        key == 'wilayah' ||
-        key.startsWith('status_pernikahan_anak_');
-  }
+  bool _isDateField(String key) => key.toLowerCase().contains('tanggal');
+  bool _isDropdownField(String key) =>
+      key == 'status_pernikahan_kepala_rumah_tangga' ||
+          key == 'stspasangan' ||
+          key == 'wilayah' ||
+          key.startsWith('status_pernikahan_anak_');
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
@@ -120,36 +116,23 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
       _controllers.forEach((key, controller) {
         if (key != 'id') {
-          // Ambil nilai dari dropdown jika itu field dropdown, jika tidak, ambil dari controller teks
-          if (_isDropdownField(key)) {
-            updatedData[key] = _dropdownValues[key];
-          } else {
-            updatedData[key] = controller.text;
-          }
+          updatedData[key] = _isDropdownField(key) ? _dropdownValues[key] : controller.text;
         }
       });
 
       final uri = Uri.parse("${ApiConfig.baseUrl}/update_user_profile.php?api_key=${ApiConfig.apiKey}");
-
       final response = await http
-          .post(
-        uri,
-        headers: {'Content-Type': 'application/json; charset=UTF-8'},
-        body: jsonEncode(updatedData),
-      )
+          .post(uri, headers: {'Content-Type': 'application/json; charset=UTF-8'}, body: jsonEncode(updatedData))
           .timeout(const Duration(seconds: 20));
-
-      print("Update Status: ${response.statusCode}");
-      print("Update Body: ${response.body}");
 
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
         if (result['status'] == 'success') {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Data berhasil diperbarui'), backgroundColor: Colors.green),
-          );
-          Navigator.pop(context, true);
+          // --- PERBAIKAN 1: Pindahkan pengecekan 'mounted' ke posisi yang benar ---
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Data berhasil diperbarui'), backgroundColor: Colors.green));
+            Navigator.pop(context, true);
+          }
         } else {
           throw Exception(result['message'] ?? 'Gagal menyimpan data dari server.');
         }
@@ -158,20 +141,17 @@ class _EditProfilePageState extends State<EditProfilePage> {
       }
     } catch (e) {
       ErrorHandler.logError(e);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(ErrorHandler.getUserFriendlyMessage(e)),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 4),
           behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.all(16),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
+        ));
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -190,7 +170,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     ];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
+      backgroundColor: const Color(0xFFF8FAFC),
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
@@ -207,83 +187,68 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   bottomRight: Radius.circular(30),
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
-                    padding: EdgeInsets.zero,
-                    alignment: Alignment.centerLeft,
-                  ),
-                  const SizedBox(height: 10),
-                  const Padding(
-                    padding: EdgeInsets.only(left: 15.0),
-                    child: Text(
-                      "Edit Profil Jemaat",
-                      style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                  InkWell(
+                    onTap: () => Navigator.pop(context),
+                    child: const CircleAvatar(
+                      radius: 22,
+                      backgroundColor: Colors.white24,
+                      child: Icon(Icons.arrow_back, color: Colors.white, size: 20),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 15.0, top: 5),
-                    child: Text(
-                      "Perbarui data untuk keluarga ${widget.userData['nama_kepala_keluarga']}",
-                      style: const TextStyle(color: Colors.white70, fontSize: 14),
-                      overflow: TextOverflow.ellipsis,
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Edit Profil Jemaat",
+                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          "Perbarui data keluarga Anda",
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
+                  const CircleAvatar(
+                    radius: 22,
+                    backgroundColor: Colors.white24,
+                    child: Icon(Icons.edit, color: Colors.white, size: 22),
+                  )
                 ],
               ),
             ),
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.all(20.0),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
               child: Form(
                 key: _formKey,
                 child: Column(
                   children: [
                     ...editableFields.map((key) {
+                      if (_controllers[key] == null) return const SizedBox.shrink();
+
                       bool isDate = _isDateField(key);
                       bool isDropdown = _isDropdownField(key);
 
                       if (isDropdown) {
-                        List<String> options;
-                        if (key == 'wilayah') {
-                          options = _wilayahOptions;
-                        } else {
-                          options = _statusOptions;
-                        }
-
+                        List<String> options = (key == 'wilayah') ? _wilayahOptions : _statusOptions;
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 16.0),
                           child: DropdownButtonFormField<String>(
                             value: _dropdownValues[key],
                             isExpanded: true,
-                            decoration: InputDecoration(
-                              labelText: _getLabelText(key),
-                              border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-                              filled: true,
-                              fillColor: Colors.white,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                            ),
+                            decoration: _inputDecoration(_getLabelText(key)),
                             items: options.map<DropdownMenuItem<String>>((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value),
-                              );
+                              return DropdownMenuItem<String>(value: value, child: Text(value));
                             }).toList(),
-                            onChanged: (String? newValue) {
-                              setState(() {
-                                _dropdownValues[key] = newValue;
-                              });
-                            },
-                            validator: (value) {
-                              if (_isRequired(key) && value == null) {
-                                return 'Field ini tidak boleh kosong';
-                              }
-                              return null;
-                            },
+                            onChanged: (String? newValue) => setState(() => _dropdownValues[key] = newValue),
+                            validator: (value) => _isRequired(key) && value == null ? 'Field ini tidak boleh kosong' : null,
                           ),
                         );
                       } else {
@@ -292,21 +257,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
                           child: TextFormField(
                             controller: _controllers[key],
                             readOnly: isDate,
-                            decoration: InputDecoration(
-                              labelText: _getLabelText(key),
-                              border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-                              filled: true,
-                              fillColor: Colors.white,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              suffixIcon: isDate ? const Icon(Icons.calendar_month) : null,
-                            ),
+                            decoration: _inputDecoration(_getLabelText(key), suffixIcon: isDate ? const Icon(Icons.calendar_month) : null),
                             onTap: isDate ? () => _selectDate(context, key) : null,
-                            validator: (value) {
-                              if (_isRequired(key) && (value == null || value.isEmpty)) {
-                                return 'Field ini tidak boleh kosong';
-                              }
-                              return null;
-                            },
+                            validator: (value) => _isRequired(key) && (value == null || value.isEmpty) ? 'Field ini tidak boleh kosong' : null,
                           ),
                         );
                       }
@@ -314,20 +267,22 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     const SizedBox(height: 20),
                     _isLoading
                         ? const CircularProgressIndicator()
-                        : ElevatedButton.icon(
-                      onPressed: _saveProfile,
-                      icon: const Icon(Icons.save_as_outlined),
-                      label: const Text('Simpan Perubahan'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue[800],
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
+                        : SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.save),
+                        label: const Text("Simpan Perubahan"),
+                        onPressed: _saveProfile,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue[800],
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
+                    const SizedBox(height: 40),
                   ],
                 ),
               ),
@@ -338,23 +293,37 @@ class _EditProfilePageState extends State<EditProfilePage> {
     );
   }
 
-  bool _isRequired(String key) {
-    const requiredKeys = {'nama_kepala_keluarga', 'alamat', 'wilayah'};
-    return requiredKeys.contains(key);
+  InputDecoration _inputDecoration(String label, {Widget? suffixIcon}) {
+    return InputDecoration(
+      labelText: label,
+      border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      suffixIcon: suffixIcon,
+    );
   }
 
   String _getLabelText(String key) {
-    const Map<String, String> labels = {
-      'nama_kepala_keluarga': 'Nama Kepala Keluarga', 'nomor_telepon_kepala_rumah_tangga': 'No. Telepon KK', 'tanggal_lahir_kepala_keluarga': 'Tgl. Lahir KK', 'tanggal_sidi_kepala_keluarga': 'Tgl. Sidi KK', 'tanggal_baptis_kepala_keluarga': 'Tgl. Baptis KK', 'emailkk': 'Email KK', 'status_pernikahan_kepala_rumah_tangga': 'Status Pernikahan',
-      'alamat': 'Alamat', 'wilayah': 'Wilayah',
-      'nama_istri': 'Nama Istri', 'tanggal_lahir_istri': 'Tgl. Lahir Istri', 'tanggal_baptis_istri': 'Tgl. Baptis Istri', 'tanggal_sidi_istri': 'Tgl. Sidi Istri', 'nomor_telepon_istri': 'No. Telepon Istri', 'stspasangan': 'Status Istri', 'emailpasangan': 'Email Istri',
-      'nama_anak_pertama': 'Nama Anak Ke-1', 'tanggal_lahir_anak_pertama': 'Tgl. Lahir Anak Ke-1', 'status_pernikahan_anak_pertama': 'Status Nikah Anak Ke-1',
-      'nama_anak_kedua': 'Nama Anak Ke-2', 'tanggal_lahir_anak_kedua': 'Tgl. Lahir Anak Ke-2', 'status_pernikahan_anak_kedua': 'Status Nikah Anak Ke-2',
-      'nama_anak_ketiga': 'Nama Anak Ke-3', 'tanggal_lahir_anak_ketiga': 'Tgl. Lahir Anak Ke-3', 'status_pernikahan_anak_ketiga': 'Status Nikah Anak Ke-3',
-      'nama_anak_keempat': 'Nama Anak Ke-4', 'tanggal_lahir_anak_keempat': 'Tgl. Lahir Anak Ke-4', 'status_pernikahan_anak_keempat': 'Status Nikah Anak Ke-4',
-      'nama_anak_kelima': 'Nama Anak Ke-5', 'tanggal_lahir_anak_kelima': 'Tgl. Lahir Anak Ke-5', 'status_pernikahan_anak_kelima': 'Status Nikah Anak Ke-5',
-      'nama_tanggungan_pertama': 'Nama Tanggungan Ke-1', 'nama_tanggungan_kedua': 'Nama Tanggungan Ke-2', 'nama_tanggungan_ketiga': 'Nama Tanggungan Ke-3',
+    const labelMap = {
+      'nama_kepala_keluarga': 'Nama Kepala Keluarga', 'nomor_telepon_kepala_rumah_tangga': 'No. Telepon', 'tanggal_lahir_kepala_keluarga': 'Tgl. Lahir',
+      'tanggal_sidi_kepala_keluarga': 'Tgl. Sidi', 'tanggal_baptis_kepala_keluarga': 'Tgl. Baptis', 'emailkk': 'Email', 'status_pernikahan_kepala_rumah_tangga': 'Status Pernikahan',
+      'alamat': 'Alamat', 'wilayah': 'wilayah',
+      'nama_istri': 'Nama Istri', 'tanggal_lahir_istri': 'Tgl. Lahir', 'tanggal_baptis_istri': 'Tgl. Baptis', 'tanggal_sidi_istri': 'Tgl. Sidi',
+      'nomor_telepon_istri': 'No. Telepon', 'stspasangan': 'Status Pernikahan', 'emailpasangan': 'Email',
     };
-    return labels[key] ?? key.replaceAll('_', ' ').toUpperCase();
+    if(labelMap.containsKey(key)) return labelMap[key]!;
+
+    if(key.startsWith('nama_anak_')) return 'Nama Anak';
+    if(key.startsWith('tanggal_lahir_anak_')) return 'Tgl. Lahir Anak';
+    if(key.startsWith('status_pernikahan_anak_')) return 'Status Pernikahan Anak';
+    if(key.startsWith('nama_tanggungan_')) return 'Nama Tanggungan';
+
+    return key.replaceAll('_', ' ').split(' ').map((str) => str.isNotEmpty ? '${str[0].toUpperCase()}${str.substring(1)}' : '').join(' ');
+  }
+
+  bool _isRequired(String key) {
+    const requiredKeys = {'nama_kepala_keluarga', 'alamat', 'wilayah'};
+    return requiredKeys.contains(key);
   }
 }

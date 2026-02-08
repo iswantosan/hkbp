@@ -7,6 +7,11 @@ import 'edit_profile_page.dart'; // Pastikan file ini ada dan benar
 import 'config/api_config.dart';
 import 'utils/error_handler.dart';
 
+// Impor yang dibutuhkan untuk fungsionalitas logout
+import 'services/auth_service.dart';
+import 'home_screen.dart';
+import 'login_page.dart';
+
 class ProfilePage extends StatefulWidget {
   final int userId;
 
@@ -64,25 +69,21 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<Map<String, dynamic>> fetchUserProfile() async {
-    // --- PERBAIKAN: Menambahkan parameter cache-busting (anti-cache) ---
     final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
     final uri = Uri.parse("${ApiConfig.baseUrl}/get_user_profile.php?api_key=${ApiConfig.apiKey}&id_jemaat=${widget.userId}&cache_buster=$timestamp");
 
-    print("Memanggil API Profil: $uri");
-
     try {
       final response = await http.get(uri, headers: {
-        // Header ini meminta server agar tidak menggunakan cache
         'Cache-Control': 'no-cache, must-revalidate',
       }).timeout(const Duration(seconds: 20));
-
-      print("Status Code API Profil: ${response.statusCode}");
 
       if (response.statusCode == 200) {
         if (response.body.trim().isEmpty) throw Exception('Respons dari server kosong.');
         if (response.body.trim().startsWith('{')) {
           final errorJson = json.decode(response.body.trim());
-          throw Exception(errorJson['message'] ?? 'Format data tidak dikenal.');
+          if (errorJson['status'] != 'success') {
+            throw Exception(errorJson['message'] ?? 'Gagal memuat data profil.');
+          }
         }
         String decodedString = utf8.decode(base64.decode(response.body.trim()));
         return json.decode(decodedString) as Map<String, dynamic>;
@@ -94,6 +95,37 @@ class _ProfilePageState extends State<ProfilePage> {
     } catch (e) {
       throw Exception(ErrorHandler.getUserFriendlyMessage(e));
     }
+  }
+
+  // Fungsi untuk menangani logout
+  void _handleLogout() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Logout"),
+        content: const Text("Apakah Anda yakin ingin keluar dari akun ini?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Batal"),
+          ),
+          TextButton(
+            onPressed: () async {
+              // Hapus sesi login
+              await AuthService.logout();
+
+              if (!mounted) return;
+              // Kembali ke HomeScreen, menghapus semua halaman di atasnya
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => const HomeScreen()),
+                    (Route<dynamic> route) => false,
+              );
+            },
+            child: const Text("Logout", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -113,8 +145,6 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildProfileView(Map<String, dynamic> user) {
-    print("datanya");
-    print(user);
     final List<Map<String, dynamic>> dataGroups = [
       { "title": "Data Umum Keluarga", "icon": Icons.home_work_outlined, "color": Colors.indigo, "columns": ['nama_keluarga', 'keanggotaan', 'alamat', 'wilayah', 'timestamp'] },
       { "title": "Kepala Keluarga", "icon": Icons.person_outline, "color": Colors.blue, "check_key": "nama_kepala_keluarga", "columns": [ 'nama_kepala_keluarga', 'nomor_telepon_kepala_rumah_tangga', 'emailkk', 'tanggal_lahir_kepala_keluarga', 'tanggal_baptis_kepala_keluarga', 'tanggal_sidi_kepala_keluarga', 'status_pernikahan_kepala_rumah_tangga', 'tanggal_pernikahan', 'tanggal_meninggal_kepala_keluarga' ] },
@@ -128,21 +158,20 @@ class _ProfilePageState extends State<ProfilePage> {
       physics: const BouncingScrollPhysics(),
       slivers: [
         SliverAppBar(
-          expandedHeight: 180.0, pinned: true, stretch: true,
+          expandedHeight: 180.0,
+          pinned: true,
+          stretch: true,
           backgroundColor: Colors.blue[900],
-          iconTheme: IconThemeData(color: Colors.white),
+          iconTheme: const IconThemeData(color: Colors.white),
           actions: [
             IconButton(
               icon: const Icon(Icons.edit_note, color: Colors.white),
               onPressed: () {
-                // --- PERBAIKAN LOGIKA REFRESH ---
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => EditProfilePage(userData: user)),
                 ).then((isDataUpdated) {
-                  // Jika halaman edit mengembalikan nilai 'true' (artinya ada update)
                   if (isDataUpdated == true) {
-                    // Panggil setState untuk memuat ulang data dengan fetchUserProfile()
                     setState(() {
                       _userProfileFuture = fetchUserProfile();
                     });
@@ -152,20 +181,30 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ],
           flexibleSpace: FlexibleSpaceBar(
-            title: Text(user['nama_kepala_keluarga'] ?? 'Profil Jemaat', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold,color: Color(0xFFFFFFFF))),
+            title: Text(
+              user['nama_kepala_keluarga'] ?? 'Profil Jemaat',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+              overflow: TextOverflow.ellipsis,
+            ),
             centerTitle: true,
             background: Container(
-              decoration: BoxDecoration( gradient: LinearGradient( begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Colors.blue[900]!, Colors.blue[700]!], ), ),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Colors.blue[900]!, Colors.blue[700]!],
+                ),
+              ),
               child: Stack(
                 children: [
-                  const Positioned.fill(child: Icon(Icons.person, color: Colors.white24, size: 100)),
+                  const Positioned.fill(child: Icon(Icons.person, color: Colors.white24, size: 80)),
                   Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const CircleAvatar(radius: 40, backgroundColor: Colors.white24, child: Icon(Icons.person, size: 40, color: Colors.white)),
-                        const SizedBox(height: 10),
-                        Text("No. Urut: ${user['no_pokok'] ?? user['id'] ?? 'N/A'}", style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                        const CircleAvatar(radius: 30, backgroundColor: Colors.white24, child: Icon(Icons.person, size: 30, color: Colors.white)),
+                        const SizedBox(height: 15),
+                        Text("No. Urut: ${user['no_pokok'] ?? user['id'] ?? 'N/A'}", style: const TextStyle(color: Colors.white70, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -174,35 +213,68 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.all(16.0),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate(
-              dataGroups.map((group) {
+        SliverList(
+          delegate: SliverChildListDelegate(
+            [
+              ...dataGroups.map((group) {
                 if (group.containsKey('check_key') && (user[group['check_key']] == null || user[group['check_key']].toString().isEmpty)) {
                   return const SizedBox.shrink();
                 }
                 final Map<String, String?> cardData = { for (var col in group['columns']) _formatLabel(col): user[col]?.toString() };
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: _buildInfoCard( title: group['title'], icon: group['icon'], iconColor: group['color'], data: cardData, ),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: _buildInfoCard(
+                    title: group['title'],
+                    icon: group['icon'],
+                    iconColor: group['color'],
+                    data: cardData,
+                  ),
                 );
               }).toList(),
-            ),
+
+              // --- PERUBAHAN 3: Menambahkan Tombol Logout ---
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 30.0),
+                child: ElevatedButton.icon(
+                  onPressed: _handleLogout,
+                  icon: const Icon(Icons.logout),
+                  label: const Text("Logout dari Profil"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue[800],
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              // --- AKHIR PERUBAHAN ---
+            ],
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: 30)),
       ],
     );
   }
 
-  Widget _buildInfoCard({ required String title, required IconData icon, required Color iconColor, required Map<String, String?> data, }) {
+  Widget _buildInfoCard({
+    required String title,
+    required IconData icon,
+    required Color iconColor,
+    required Map<String, String?> data,
+  }) {
     final validEntries = data.entries.where((entry) => entry.value != null && entry.value!.trim().isNotEmpty).toList();
     if (validEntries.isEmpty) return const SizedBox.shrink();
 
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration( color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10)], ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10)],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -216,20 +288,26 @@ class _ProfilePageState extends State<ProfilePage> {
           const Divider(height: 20, thickness: 0.5),
           ...validEntries.map((entry) {
             String displayValue = entry.value!;
-            String originalKey = _specialLabels.entries.firstWhere((mapEntry) => mapEntry.value == entry.key, orElse: () => MapEntry(entry.key.toLowerCase().replaceAll(' ', '_'),'')).key;
+            String originalKey = _specialLabels.entries.firstWhere((mapEntry) => mapEntry.value == entry.key, orElse: () => MapEntry(entry.key.toLowerCase().replaceAll(' ', '_'), '')).key;
             if (originalKey.contains('tanggal_')) {
               displayValue = _formatDate(displayValue);
             }
-            if(displayValue == "-") return const SizedBox.shrink();
+            if (displayValue == "-") return const SizedBox.shrink();
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 8.0),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded( flex: 2, child: Text(entry.key, style: TextStyle(color: Colors.grey[600], fontSize: 13)), ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(entry.key, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                  ),
                   const Text(" : ", style: TextStyle(color: Colors.grey)),
-                  Expanded( flex: 3, child: Text(displayValue, style: const TextStyle(color: Color(0xFF334155), fontSize: 13, fontWeight: FontWeight.w500)), ),
+                  Expanded(
+                    flex: 3,
+                    child: Text(displayValue, style: const TextStyle(color: Color(0xFF334155), fontSize: 13, fontWeight: FontWeight.w500)),
+                  ),
                 ],
               ),
             );
@@ -252,7 +330,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildErrorState(String error) {
+  Widget _buildErrorState(String message) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -263,7 +341,20 @@ class _ProfilePageState extends State<ProfilePage> {
             const SizedBox(height: 16),
             const Text("Gagal Memuat Data", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
             const SizedBox(height: 8),
-            Text(error, style: TextStyle(color: Colors.grey[600]), textAlign: TextAlign.center),
+            Text(
+              message.replaceAll("Exception: ", ""),
+              style: TextStyle(color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _userProfileFuture = fetchUserProfile();
+                });
+              },
+              child: const Text("Coba Lagi"),
+            ),
           ],
         ),
       ),

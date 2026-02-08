@@ -19,7 +19,11 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
   int selectedYear = DateTime.now().year;
   List<dynamic> monthlyReports = [];
   List<dynamic> annualTotals = [];
+  List<dynamic> persembahanList = [];
+  List<dynamic> diakoniaList = [];
   bool isLoading = true;
+  bool isPersembahanLoading = false;
+  bool isDiakoniaLoading = false;
 
   // Data statis untuk filter tahun
   final List<int> yearList = [2026, 2025, 2024, 2023];
@@ -36,12 +40,14 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
     _loadAllData();
   }
 
-  // Fungsi untuk memanggil kedua API secara bersamaan
+  // Fungsi untuk memanggil semua API secara bersamaan
   Future<void> _loadAllData() async {
     setState(() => isLoading = true);
     await Future.wait([
       _fetchFinancialTotals(),
       _fetchFinancialReports(),
+      _fetchPersembahan(),
+      _fetchDiakoniaSosial(),
     ]);
     setState(() => isLoading = false);
   }
@@ -88,8 +94,59 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
     }
   }
 
+  // API untuk mengambil semua data persembahan dari semua jemaat
+  Future<void> _fetchPersembahan() async {
+    setState(() => isPersembahanLoading = true);
+    try {
+      final response = await http.get(
+        Uri.parse("${ApiConfig.baseUrl}/get_persembahan.php?api_key=${ApiConfig.apiKey}"),
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        String decodedString = utf8.decode(base64.decode(response.body.trim()));
+        final List<dynamic> decodedData = json.decode(decodedString);
+        setState(() => persembahanList = decodedData);
+      }
+    } catch (e) {
+      ErrorHandler.logError(e);
+    } finally {
+      if (mounted) setState(() => isPersembahanLoading = false);
+    }
+  }
+
+  // API untuk mengambil semua data diakonia sosial dari semua jemaat
+  Future<void> _fetchDiakoniaSosial() async {
+    setState(() => isDiakoniaLoading = true);
+    try {
+      final response = await http.get(
+        Uri.parse("${ApiConfig.baseUrl}/get_diakonia_sosial.php?api_key=${ApiConfig.apiKey}"),
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        String decodedString = utf8.decode(base64.decode(response.body.trim()));
+        final List<dynamic> decodedData = json.decode(decodedString);
+        setState(() => diakoniaList = decodedData);
+      }
+    } catch (e) {
+      ErrorHandler.logError(e);
+    } finally {
+      if (mounted) setState(() => isDiakoniaLoading = false);
+    }
+  }
+
   String formatIDR(num amount) {
     return NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(amount);
+  }
+
+  String _formatDate(String? dateString) {
+    if (dateString == null || dateString.isEmpty || dateString == "0000-00-00") {
+      return "-";
+    }
+    try {
+      return DateFormat('d MMM yyyy', 'id_ID').format(DateTime.parse(dateString));
+    } catch (e) {
+      return dateString;
+    }
   }
 
   void _navigateToDetail(Map<String, dynamic> reportData) {
@@ -110,9 +167,18 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
       backgroundColor: const Color(0xFFF8FAFC),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
+          : RefreshIndicator(
+        onRefresh: () async {
+          await Future.wait([
+            _fetchFinancialTotals(),
+            _fetchFinancialReports(),
+            _fetchPersembahan(),
+            _fetchDiakoniaSosial(),
+          ]);
+        },
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
           // PERBAIKAN: HEADER DISAMAKAN DENGAN HALAMAN LAIN
           SliverToBoxAdapter(
             child: Container(
@@ -204,6 +270,29 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
             ),
           ),
 
+          // SECTION PERSEMBAHAN DAN DIAKONIA SOSIAL
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Persembahan & Diakonia Sosial", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                  const SizedBox(height: 15),
+                  Column(
+                    children: [
+                      // Card Persembahan
+                      _buildPersembahanCard(),
+                      const SizedBox(height: 15),
+                      // Card Diakonia Sosial
+                      _buildDiakoniaCard(),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           // FILTER TAHUN & LIST LAPORAN BULANAN
           SliverToBoxAdapter(
             child: Padding(
@@ -258,6 +347,7 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 30)),
         ],
+        ),
       ),
     );
   }
@@ -335,6 +425,190 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
         children: [
           Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
           Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+        ],
+      ),
+    );
+  }
+
+  // Widget untuk card Persembahan
+  Widget _buildPersembahanCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [Colors.amber[700]!, Colors.amber[500]!]),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.volunteer_activism, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  "Persembahan",
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: isPersembahanLoading
+                ? const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(strokeWidth: 2)))
+                : persembahanList.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Text("Belum ada data", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        ),
+                      )
+                    : ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 400),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: persembahanList.length,
+                          itemBuilder: (context, index) {
+                            final item = persembahanList[index];
+                            num jumlah = num.tryParse(item['total_jumlah']?.toString() ?? '0') ?? 0;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          item['nama_pemasukan'] ?? '-',
+                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                        ),
+                                      ),
+                                      Text(
+                                        formatIDR(jumlah),
+                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green[700]),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    "Diberikan oleh: ${item['diberikan_oleh'] ?? '-'}",
+                                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                  ),
+                                  Text(
+                                    _formatDate(item['tgl_pelean']),
+                                    style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Widget untuk card Diakonia Sosial
+  Widget _buildDiakoniaCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [Colors.pink[600]!, Colors.pink[400]!]),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.favorite, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  "Diakonia Sosial",
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: isDiakoniaLoading
+                ? const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(strokeWidth: 2)))
+                : diakoniaList.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Text("Belum ada data", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        ),
+                      )
+                    : ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 400),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: diakoniaList.length,
+                          itemBuilder: (context, index) {
+                            final item = diakoniaList[index];
+                            num jumlah = num.tryParse(item['total_pengeluaran']?.toString() ?? '0') ?? 0;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          item['nama_pengeluaran'] ?? '-',
+                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                        ),
+                                      ),
+                                      Text(
+                                        formatIDR(jumlah),
+                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red[700]),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    "Diberikan kepada: ${item['diberikan_kepada'] ?? '-'}",
+                                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                  ),
+                                  Text(
+                                    _formatDate(item['tgl_pengeluaran']),
+                                    style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+          ),
         ],
       ),
     );

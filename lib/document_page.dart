@@ -57,17 +57,30 @@ class DocumentPage extends StatelessWidget {
     try {
       // 2. REQUEST IZIN STORAGE (LOGIC ANDROID 10-13+)
       if (Platform.isAndroid) {
-        // Untuk Android 11+ (API 30+), tidak perlu permission khusus untuk menyimpan ke Download
-        // Menggunakan getExternalStorageDirectory() yang sudah aman
-        // Untuk Android 10 ke bawah, masih perlu storage permission
+        // Untuk Android 13+ (API 33+), gunakan READ_MEDIA atau tetap pakai storage
+        // Untuk Android 11+ (API 30+), coba manageExternalStorage dulu
+        // Untuk Android 10 ke bawah, pakai storage biasa
         
         bool hasPermission = false;
         
         // Cek Android version
         if (await _isAndroid11OrAbove()) {
-          // Android 11+ - tidak perlu permission khusus, langsung bisa simpan
-          // getExternalStorageDirectory() sudah cukup untuk folder Download
-          hasPermission = true;
+          // Android 11+ - coba manageExternalStorage
+          var manageStatus = await Permission.manageExternalStorage.status;
+          if (!manageStatus.isGranted) {
+            manageStatus = await Permission.manageExternalStorage.request();
+          }
+          
+          if (manageStatus.isGranted) {
+            hasPermission = true;
+          } else {
+            // Fallback ke storage permission
+            var storageStatus = await Permission.storage.status;
+            if (!storageStatus.isGranted) {
+              storageStatus = await Permission.storage.request();
+            }
+            hasPermission = storageStatus.isGranted;
+          }
         } else {
           // Android 10 ke bawah - pakai storage permission
           var storageStatus = await Permission.storage.status;
@@ -152,16 +165,10 @@ class DocumentPage extends StatelessWidget {
   Future<bool> _isAndroid11OrAbove() async {
     if (!Platform.isAndroid) return false;
     // Android 11 = API 30
-    // Cek menggunakan Platform.operatingSystemVersion
+    // Kita asumsikan jika manageExternalStorage tersedia, berarti Android 11+
     try {
-      final version = Platform.operatingSystemVersion;
-      // Extract version number dari string seperti "Android 11 (API 30)"
-      final match = RegExp(r'API (\d+)').firstMatch(version);
-      if (match != null) {
-        final apiLevel = int.tryParse(match.group(1) ?? '');
-        return apiLevel != null && apiLevel >= 30; // Android 11 = API 30
-      }
-      return false;
+      await Permission.manageExternalStorage.status;
+      return true; // Jika permission ini ada, berarti Android 11+
     } catch (e) {
       return false;
     }
