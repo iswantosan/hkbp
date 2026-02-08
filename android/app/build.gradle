@@ -5,8 +5,14 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
-    namespace = "com.example.hkbp"
+    namespace = "com.app.hkbp"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -21,7 +27,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.hkbp"
+        applicationId = "com.app.hkbp"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -30,11 +36,34 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                def keystoreFile = keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+                if (keystoreFile != null && keystoreFile.exists()) {
+                    keyAlias keystoreProperties['keyAlias']
+                    keyPassword keystoreProperties['keyPassword']
+                    storeFile keystoreFile
+                    storePassword keystoreProperties['storePassword']
+                }
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+            if (keystorePropertiesFile.exists()) {
+                def keystoreFile = keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+                if (keystoreFile != null && keystoreFile.exists()) {
+                    signingConfig = signingConfigs.release
+                } else {
+                    println "WARNING: Keystore file not found at ${keystoreFile?.absolutePath}. Using debug signing."
+                    signingConfig = signingConfigs.debug
+                }
+            } else {
+                println "WARNING: key.properties not found. Using debug signing for release build."
+                signingConfig = signingConfigs.debug
+            }
         }
     }
 }
