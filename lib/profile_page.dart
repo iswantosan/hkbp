@@ -10,7 +10,6 @@ import 'utils/error_handler.dart';
 // Impor yang dibutuhkan untuk fungsionalitas logout
 import 'services/auth_service.dart';
 import 'home_screen.dart';
-import 'login_page.dart';
 
 class ProfilePage extends StatefulWidget {
   final int userId;
@@ -21,8 +20,15 @@ class ProfilePage extends StatefulWidget {
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
-class _ProfilePageState extends State<ProfilePage> {
+class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStateMixin {
   Future<Map<String, dynamic>>? _userProfileFuture;
+  TabController? _tabController;
+  
+  // State untuk Persembahan dan Diakonia
+  List<dynamic> persembahanList = [];
+  List<dynamic> diakoniaList = [];
+  bool isPersembahanLoading = false;
+  bool isDiakoniaLoading = false;
 
   // Peta untuk label khusus yang disesuaikan dengan daftar kolom Anda
   static const Map<String, String> _specialLabels = {
@@ -49,8 +55,84 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     Intl.defaultLocale = 'id_ID';
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController!.addListener(_handleTabChange);
     _userProfileFuture = fetchUserProfile();
   }
+
+  void _handleTabChange() {
+    if (_tabController != null && _tabController!.index == 1 && persembahanList.isEmpty && diakoniaList.isEmpty) {
+      _loadPersembahanDanDiakonia();
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabController?.removeListener(_handleTabChange);
+    _tabController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadPersembahanDanDiakonia() async {
+    await Future.wait([
+      _fetchPersembahan(),
+      _fetchDiakoniaSosial(),
+    ]);
+  }
+
+  Future<void> _fetchPersembahan() async {
+    setState(() => isPersembahanLoading = true);
+    try {
+      final response = await http.get(
+        Uri.parse("${ApiConfig.baseUrl}/get_persembahan.php?api_key=${ApiConfig.apiKey}&user_id=${widget.userId}"),
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        String decodedString = utf8.decode(base64.decode(response.body.trim()));
+        final List<dynamic> decodedData = json.decode(decodedString);
+        setState(() => persembahanList = decodedData);
+      }
+    } catch (e) {
+      ErrorHandler.logError(e);
+    } finally {
+      if (mounted) setState(() => isPersembahanLoading = false);
+    }
+  }
+
+  Future<void> _fetchDiakoniaSosial() async {
+    setState(() => isDiakoniaLoading = true);
+    try {
+      final response = await http.get(
+        Uri.parse("${ApiConfig.baseUrl}/get_diakonia_sosial.php?api_key=${ApiConfig.apiKey}&user_id=${widget.userId}"),
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        String decodedString = utf8.decode(base64.decode(response.body.trim()));
+        final List<dynamic> decodedData = json.decode(decodedString);
+        setState(() => diakoniaList = decodedData);
+      }
+    } catch (e) {
+      ErrorHandler.logError(e);
+    } finally {
+      if (mounted) setState(() => isDiakoniaLoading = false);
+    }
+  }
+
+  String _formatIDR(num amount) {
+    return NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(amount);
+  }
+
+  String _formatDatePersembahan(String? dateString) {
+    if (dateString == null || dateString.isEmpty || dateString == "0000-00-00") {
+      return "-";
+    }
+    try {
+      return DateFormat('d MMM yyyy', 'id_ID').format(DateTime.parse(dateString));
+    } catch (e) {
+      return dateString;
+    }
+  }
+
 
   String _formatDate(String? dateString) {
     if (dateString == null || dateString.isEmpty || dateString == "0000-00-00" || dateString == "1990-01-01" || dateString == "1900-01-01") {
@@ -130,6 +212,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    // Pastikan tabController diinisialisasi
+    _tabController ??= TabController(length: 2, vsync: this);
+    
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: FutureBuilder<Map<String, dynamic>>(
@@ -137,9 +222,303 @@ class _ProfilePageState extends State<ProfilePage> {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) return _buildLoadingState();
           if (snapshot.hasError) return _buildErrorState(snapshot.error.toString());
-          if (snapshot.hasData && snapshot.data!.isNotEmpty) return _buildProfileView(snapshot.data!);
+          if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+            return Column(
+              children: [
+                _buildTabBar(snapshot.data!),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController!,
+                    children: [
+                      _buildProfileView(snapshot.data!),
+                      _buildPersembahanDanDiakoniaView(),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
           return _buildErrorState("Data profil untuk jemaat ini tidak ditemukan.");
         },
+      ),
+    );
+  }
+
+  Widget _buildTabBar(Map<String, dynamic> user) {
+    return Container(
+      color: Colors.blue[900],
+      child: Column(
+        children: [
+          Container(
+            height: 200,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Colors.blue[900]!, Colors.blue[700]!],
+              ),
+            ),
+            child: Stack(
+              children: [
+                const Positioned.fill(child: Icon(Icons.person, color: Colors.white24, size: 80)),
+                SafeArea(
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.edit_note, color: Colors.white),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => EditProfilePage(userData: user)),
+                              ).then((isDataUpdated) {
+                                if (isDataUpdated == true) {
+                                  setState(() {
+                                    _userProfileFuture = fetchUserProfile();
+                                  });
+                                }
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                      Expanded(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const CircleAvatar(radius: 35, backgroundColor: Colors.white24, child: Icon(Icons.person, size: 35, color: Colors.white)),
+                              const SizedBox(height: 18),
+                              Text("No. Urut: ${user['no_pokok'] ?? user['id'] ?? 'N/A'}", style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                              const SizedBox(height: 10),
+                              Flexible(
+                                child: Text(
+                                  user['nama_kepala_keluarga'] ?? 'Profil Jemaat',
+                                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            color: Colors.blue[900],
+            child: TabBar(
+              controller: _tabController!,
+              indicatorColor: Colors.white,
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.white70,
+              tabs: const [
+                Tab(text: 'Profil', icon: Icon(Icons.person)),
+                Tab(text: 'Persembahan & Diakonia', icon: Icon(Icons.volunteer_activism)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPersembahanDanDiakoniaView() {
+    return RefreshIndicator(
+      onRefresh: _loadPersembahanDanDiakonia,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            _buildPersembahanCard(),
+            const SizedBox(height: 15),
+            _buildDiakoniaCard(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPersembahanCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [Colors.amber[700]!, Colors.amber[500]!]),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.volunteer_activism, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  "Persembahan",
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: isPersembahanLoading
+                ? const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(strokeWidth: 2)))
+                : persembahanList.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Text("Belum ada data", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        ),
+                      )
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: persembahanList.length,
+                        itemBuilder: (context, index) {
+                          final item = persembahanList[index];
+                          num jumlah = num.tryParse(item['total_jumlah']?.toString() ?? '0') ?? 0;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        item['nama_pemasukan'] ?? '-',
+                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                      ),
+                                    ),
+                                    Text(
+                                      _formatIDR(jumlah),
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green[700]),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _formatDatePersembahan(item['tgl_pelean']),
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiakoniaCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [Colors.pink[600]!, Colors.pink[400]!]),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.favorite, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  "Diakonia Sosial",
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: isDiakoniaLoading
+                ? const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(strokeWidth: 2)))
+                : diakoniaList.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Text("Belum ada data", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        ),
+                      )
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: diakoniaList.length,
+                        itemBuilder: (context, index) {
+                          final item = diakoniaList[index];
+                          num jumlah = num.tryParse(item['total_pengeluaran']?.toString() ?? '0') ?? 0;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        item['nama_pengeluaran'] ?? '-',
+                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                      ),
+                                    ),
+                                    Text(
+                                      _formatIDR(jumlah),
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red[700]),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  "Diberikan kepada: ${item['diberikan_kepada'] ?? '-'}",
+                                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                ),
+                                Text(
+                                  _formatDatePersembahan(item['tgl_pengeluaran']),
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
       ),
     );
   }
@@ -157,62 +536,6 @@ class _ProfilePageState extends State<ProfilePage> {
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
-        SliverAppBar(
-          expandedHeight: 180.0,
-          pinned: true,
-          stretch: true,
-          backgroundColor: Colors.blue[900],
-          iconTheme: const IconThemeData(color: Colors.white),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.edit_note, color: Colors.white),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => EditProfilePage(userData: user)),
-                ).then((isDataUpdated) {
-                  if (isDataUpdated == true) {
-                    setState(() {
-                      _userProfileFuture = fetchUserProfile();
-                    });
-                  }
-                });
-              },
-            ),
-          ],
-          flexibleSpace: FlexibleSpaceBar(
-            title: Text(
-              user['nama_kepala_keluarga'] ?? 'Profil Jemaat',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-              overflow: TextOverflow.ellipsis,
-            ),
-            centerTitle: true,
-            background: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Colors.blue[900]!, Colors.blue[700]!],
-                ),
-              ),
-              child: Stack(
-                children: [
-                  const Positioned.fill(child: Icon(Icons.person, color: Colors.white24, size: 80)),
-                  Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const CircleAvatar(radius: 30, backgroundColor: Colors.white24, child: Icon(Icons.person, size: 30, color: Colors.white)),
-                        const SizedBox(height: 15),
-                        Text("No. Urut: ${user['no_pokok'] ?? user['id'] ?? 'N/A'}", style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
         SliverList(
           delegate: SliverChildListDelegate(
             [
@@ -250,7 +573,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 30),
               // --- AKHIR PERUBAHAN ---
             ],
           ),
