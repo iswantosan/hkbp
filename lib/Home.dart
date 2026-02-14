@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:html/parser.dart' as html_parser;
 import 'utils/error_handler.dart';
 
 
@@ -32,6 +34,10 @@ class _HomeState extends State<Home> {
   List<Verse> _verses = const [];
   bool _isLoading = true;
   String? _error;
+
+  /// State untuk terjemahan Batak
+  Map<String, String> _batakVerses = {}; // Key: "book_chapter_verse", Value: text
+  Map<String, bool> _loadingBatak = {}; // Key: "book_chapter_verse", Value: loading state
 
   /// Variabel filter
   String selectedBook = 'Mat';
@@ -157,6 +163,213 @@ class _HomeState extends State<Home> {
         .replaceAll(RegExp(r'<[^>]*>'), '')
         .replaceAll(RegExp(r'&nbsp;'), ' ')
         .trim();
+  }
+
+  /// Mapping kode kitab ke nama untuk API
+  String _getBookNameForAPI(String code) {
+    final allBooks = bibleBooks.expand((cat) => cat['items'] as List).toList();
+    final book = allBooks.firstWhere(
+      (b) => b['code'] == code,
+      orElse: () => {'name': 'Matius'},
+    );
+    return book['name'] as String;
+  }
+
+  /// Mapping nama kitab ke URL path WordPress
+  String _getBookUrlPath(String bookName, int chapter) {
+    // Mapping nama kitab ke format URL WordPress
+    final bookMap = {
+      'Kejadian': 'kejadian-1-musa',
+      'Keluaran': 'keluaran-2-musa',
+      'Imamat': 'imamat-3-musa',
+      'Bilangan': 'bilangan-4-musa',
+      'Ulangan': 'ulangan-5-musa',
+      'Yosua': 'yosua',
+      'Hakim-hakim': 'hakim-hakim',
+      'Rut': 'rut',
+      '1 Samuel': '1-samuel',
+      '2 Samuel': '2-samuel',
+      '1 Raja-raja': '1-raja-raja',
+      '2 Raja-raja': '2-raja-raja',
+      '1 Tawarikh': '1-tawarikh',
+      '2 Tawarikh': '2-tawarikh',
+      'Ezra': 'ezra',
+      'Nehemia': 'nehemia',
+      'Ester': 'ester',
+      'Ayub': 'ayub',
+      'Mazmur': 'mazmur',
+      'Amsal': 'amsal',
+      'Pengkhotbah': 'pengkhotbah',
+      'Kidung Agung': 'kidung-agung',
+      'Yesaya': 'yesaya',
+      'Yeremia': 'yeremia',
+      'Ratapan': 'ratapan',
+      'Yehezkiel': 'yehezkiel',
+      'Daniel': 'daniel',
+      'Hosea': 'hosea',
+      'Yoel': 'yoel',
+      'Amos': 'amos',
+      'Obaja': 'obaja',
+      'Yunus': 'yunus',
+      'Mikha': 'mikha',
+      'Nahum': 'nahum',
+      'Habakuk': 'habakuk',
+      'Zefanya': 'zefanya',
+      'Hagai': 'hagai',
+      'Zakharia': 'zakharia',
+      'Maleakhi': 'maleakhi',
+      'Matius': 'matius',
+      'Markus': 'markus',
+      'Lukas': 'lukas',
+      'Yohanes': 'yohanes',
+      'Kisah Para Rasul': 'kisah-para-rasul',
+      'Roma': 'roma',
+      '1 Korintus': '1-korintus',
+      '2 Korintus': '2-korintus',
+      'Galatia': 'galatia',
+      'Efesus': 'efesus',
+      'Filipi': 'filipi',
+      'Kolose': 'kolose',
+      '1 Tesalonika': '1-tesalonika',
+      '2 Tesalonika': '2-tesalonika',
+      '1 Timotius': '1-timotius',
+      '2 Timotius': '2-timotius',
+      'Titus': 'titus',
+      'Filemon': 'filemon',
+      'Ibrani': 'ibrani',
+      'Yakobus': 'yakobus',
+      '1 Petrus': '1-petrus',
+      '2 Petrus': '2-petrus',
+      '1 Yohanes': '1-yohanes',
+      '2 Yohanes': '2-yohanes',
+      '3 Yohanes': '3-yohanes',
+      'Yudas': 'yudas',
+      'Wahyu': 'wahyu',
+    };
+
+    final urlPath = bookMap[bookName] ?? bookName.toLowerCase().replaceAll(' ', '-');
+    final isOldTestament = bibleBooks[0]['items'].any((b) => b['name'] == bookName);
+    final testament = isOldTestament ? 'perjanjian-lam' : 'perjanjian-baru';
+    
+    return 'https://bibeltobaindonesia.wordpress.com/$testament/$urlPath/$urlPath-$chapter/';
+  }
+
+  /// Scrape terjemahan Batak dari WordPress
+  Future<String?> _scrapeBatakVerse(String bookName, int chapter, int verse) async {
+    try {
+      final url = _getBookUrlPath(bookName, chapter);
+      debugPrint('Scraping Batak from: $url');
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final document = html_parser.parse(response.body);
+        
+        // Cari tabel yang berisi ayat-ayat
+        final tables = document.querySelectorAll('table');
+        
+        for (final table in tables) {
+          final rows = table.querySelectorAll('tr');
+          
+          for (final row in rows) {
+            final cells = row.querySelectorAll('td');
+            
+            if (cells.length >= 2) {
+              // Kolom pertama biasanya berisi nomor ayat dan teks Batak
+              final firstCell = cells[0].text.trim();
+              
+              // Cek apakah ini ayat yang kita cari
+              // Format: "1:1 Teks Batak" atau "1:1" diikuti teks
+              if (firstCell.contains('$chapter:$verse') || 
+                  firstCell.startsWith('$verse:') ||
+                  firstCell.contains(':$verse ')) {
+                // Ambil teks Batak (kolom pertama, setelah nomor ayat)
+                String batakText = firstCell;
+                
+                // Hapus nomor ayat dari awal
+                batakText = batakText.replaceAll(RegExp(r'^\d+:\d+\s*'), '');
+                batakText = batakText.replaceAll(RegExp(r'^$verse:\s*'), '');
+                
+                // Jika masih kosong, coba ambil dari inner HTML
+                if (batakText.isEmpty || batakText.length < 10) {
+                  final innerHtml = cells[0].innerHtml;
+                  // Cari teks setelah tag penutup nomor ayat
+                  final match = RegExp(r'>([^<]+)<').firstMatch(innerHtml);
+                  if (match != null) {
+                    batakText = match.group(1) ?? '';
+                  }
+                }
+                
+                if (batakText.isNotEmpty && batakText.length > 5) {
+                  return _cleanText(batakText);
+                }
+              }
+            }
+          }
+        }
+        
+        // Alternatif: cari di semua elemen dengan pattern ayat
+        final allText = document.body?.text ?? '';
+        final versePattern = RegExp(r'$chapter:$verse\s+([^\n]+)', multiLine: true);
+        final match = versePattern.firstMatch(allText);
+        if (match != null) {
+          return _cleanText(match.group(1) ?? '');
+        }
+      }
+      
+      return null;
+    } catch (e) {
+      ErrorHandler.logError(e);
+      debugPrint('Error scraping Batak: $e');
+      return null;
+    }
+  }
+
+  /// Fetch terjemahan Batak untuk satu ayat dengan scraping
+  Future<void> _fetchBatakVerse(Verse verse) async {
+    final key = "${verse.bookAbbr}_${verse.chapter}_${verse.verse}";
+    
+    // Jika sudah ada, tidak perlu fetch lagi
+    if (_batakVerses.containsKey(key)) return;
+
+    setState(() {
+      _loadingBatak[key] = true;
+    });
+
+    try {
+      final bookName = _getBookNameForAPI(verse.bookAbbr);
+      final chapter = verse.chapter;
+      final verseNum = verse.verse;
+      
+      // Scrape dari WordPress
+      final batakText = await _scrapeBatakVerse(bookName, chapter, verseNum);
+      
+      if (batakText != null && batakText.isNotEmpty) {
+        setState(() {
+          _batakVerses[key] = batakText;
+          _loadingBatak[key] = false;
+        });
+      } else {
+        setState(() {
+          _loadingBatak[key] = false;
+          _batakVerses[key] = 'Terjemahan Batak tidak tersedia untuk ayat ini';
+        });
+      }
+    } catch (e, stackTrace) {
+      ErrorHandler.logError(e, stackTrace);
+      debugPrint('Error fetching Batak verse: $e');
+      if (mounted) {
+        setState(() {
+          _loadingBatak[key] = false;
+          _batakVerses[key] = ErrorHandler.getUserFriendlyMessage(e);
+        });
+      }
+    }
   }
 
   List<Verse> _parsePassageResponse(dynamic decoded) {
@@ -461,13 +674,41 @@ class _HomeState extends State<Home> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              "${v.bookName} ${v.chapter}:${v.verse}",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: Colors.blue[900],
-                              ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    "${v.bookName} ${v.chapter}:${v.verse}",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: Colors.blue[900],
+                                    ),
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: () => _fetchBatakVerse(v),
+                                  icon: Icon(
+                                    Icons.translate,
+                                    size: 16,
+                                    color: Colors.orange[700],
+                                  ),
+                                  label: Text(
+                                    'Batak',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.orange[700],
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                ),
+                              ],
                             ),
                             const Divider(height: 20),
                             Text(
@@ -477,6 +718,91 @@ class _HomeState extends State<Home> {
                                 height: 1.6,
                                 color: Color(0xFF334155),
                               ),
+                            ),
+                            // Tampilkan terjemahan Batak jika sudah di-load
+                            Builder(
+                              builder: (context) {
+                                final key = "${v.bookAbbr}_${v.chapter}_${v.verse}";
+                                final isLoading = _loadingBatak[key] ?? false;
+                                final batakText = _batakVerses[key];
+                                
+                                if (isLoading) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Row(
+                                      children: [
+                                        SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.orange[700]!),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Memuat terjemahan Batak...',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+                                
+                                if (batakText != null && batakText.isNotEmpty) {
+                                  return Container(
+                                    margin: const EdgeInsets.only(top: 16),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange[50],
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.orange[200]!,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.translate,
+                                              size: 14,
+                                              color: Colors.orange[700],
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Bahasa Batak Toba',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.orange[800],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          batakText,
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            height: 1.6,
+                                            color: Colors.orange[900],
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+                                
+                                return const SizedBox.shrink();
+                              },
                             ),
                           ],
                         ),
