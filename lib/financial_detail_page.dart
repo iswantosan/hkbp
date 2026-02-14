@@ -235,8 +235,6 @@ class _FinancialDetailPageState extends State<FinancialDetailPage> with SingleTi
     final dateKey = isIncome ? 'tgl_pelean' : 'tgl_pengeluaran';
     final amountKey = isIncome ? 'total_jumlah' : 'total_pengeluaran';
     final emptyMessage = isIncome ? "Tidak ada data pemasukan." : "Tidak ada data pengeluaran.";
-    final errorMessage = isIncome ? "Gagal memuat pemasukan:\n" : "Gagal memuat pengeluaran:\n";
-
     return FutureBuilder<List<dynamic>>(
       future: future,
       builder: (context, snapshot) {
@@ -244,7 +242,8 @@ class _FinancialDetailPageState extends State<FinancialDetailPage> with SingleTi
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return _buildErrorState("$errorMessage${snapshot.error}");
+          ErrorHandler.logError(snapshot.error);
+          return _buildErrorState(ErrorHandler.getUserFriendlyMessage(snapshot.error));
         }
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return _buildEmptyState(emptyMessage);

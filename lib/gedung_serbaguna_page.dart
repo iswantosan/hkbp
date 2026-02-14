@@ -101,7 +101,13 @@ class _GedungSerbagunaPageState extends State<GedungSerbagunaPage> {
       ErrorHandler.logError(e, stackTrace);
       if(mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal memuat jadwal booking: ${e.toString()}')),
+          SnackBar(
+            content: Text(ErrorHandler.getUserFriendlyMessage(e)),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+          ),
         );
       }
     } finally {

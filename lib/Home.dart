@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'utils/error_handler.dart';
 
 
 /// Model bertipe untuk satu ayat
@@ -240,16 +241,18 @@ class _HomeState extends State<Home> {
           _isLoading = false;
         });
       } else {
+        ErrorHandler.logError('HTTP ${resp.statusCode}');
         setState(() {
           _isLoading = false;
-          _error = 'Gagal memuat data (HTTP ${resp.statusCode})';
+          _error = ErrorHandler.getUserFriendlyMessage('HTTP ${resp.statusCode}');
         });
       }
     } catch (e) {
       if (!mounted) return;
+      ErrorHandler.logError(e);
       setState(() {
         _isLoading = false;
-        _error = 'Terjadi kesalahan jaringan';
+        _error = ErrorHandler.getUserFriendlyMessage(e);
       });
     }
   }

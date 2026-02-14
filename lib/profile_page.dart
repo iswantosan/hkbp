@@ -223,7 +223,10 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
         future: _userProfileFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) return _buildLoadingState();
-          if (snapshot.hasError) return _buildErrorState(snapshot.error.toString());
+          if (snapshot.hasError) {
+            ErrorHandler.logError(snapshot.error);
+            return _buildErrorState(ErrorHandler.getUserFriendlyMessage(snapshot.error));
+          }
           if (snapshot.hasData && snapshot.data!.isNotEmpty) {
             return Column(
               children: [
