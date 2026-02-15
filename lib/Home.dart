@@ -1132,54 +1132,94 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
         
         String lyrics = '';
         if (content != null) {
+          print('=== DEBUG BUKU ENDE SCRAPING ===');
+          print('Content found: true');
+          
           // Hapus elemen share button dan social media sebelum mengambil konten
           // Hapus semua elemen yang terkait dengan share/social media
           content.querySelectorAll('.sharedaddy, .sd-block, .jetpack-share, .social-share, [class*="share"], [class*="facebook"], [class*="twitter"], [id*="share"], [id*="facebook"]').forEach((el) => el.remove());
           
-          // Ambil semua paragraf
-          final paragraphs = content.querySelectorAll('p');
-          for (final p in paragraphs) {
-            final text = p.text.trim();
-            // Filter lebih ketat untuk menghapus konten share/social media
-            if (text.isNotEmpty && 
-                !text.toLowerCase().contains('bagikan') &&
-                !text.toLowerCase().contains('suka') &&
-                !text.toLowerCase().contains('komentar') &&
-                !text.toLowerCase().contains('facebook') &&
-                !text.toLowerCase().contains('twitter') &&
-                !text.toLowerCase().contains('whatsapp') &&
-                !text.toLowerCase().contains('share') &&
-                !text.toLowerCase().contains('tweet') &&
-                !text.toLowerCase().contains('like') &&
-                !text.toLowerCase().contains('follow') &&
-                text.length > 3) { // Minimal 3 karakter untuk menghindari teks kosong
-              lyrics += text + '\n\n';
-            }
-          }
+          // Ambil semua <li> elements (setiap <li> adalah satu bait)
+          final listItems = content.querySelectorAll('li');
+          print('Jumlah <li> ditemukan: ${listItems.length}');
           
-          // Jika tidak ada paragraf, ambil semua text tapi filter dulu
-          if (lyrics.isEmpty) {
-            String rawText = content.text.trim();
-            // Hapus baris yang mengandung kata kunci share/social media
-            final lines = rawText.split('\n');
-            for (final line in lines) {
-              final trimmedLine = line.trim();
-              if (trimmedLine.isNotEmpty &&
-                  !trimmedLine.toLowerCase().contains('bagikan') &&
-                  !trimmedLine.toLowerCase().contains('suka') &&
-                  !trimmedLine.toLowerCase().contains('komentar') &&
-                  !trimmedLine.toLowerCase().contains('facebook') &&
-                  !trimmedLine.toLowerCase().contains('twitter') &&
-                  !trimmedLine.toLowerCase().contains('whatsapp') &&
-                  !trimmedLine.toLowerCase().contains('share') &&
-                  trimmedLine.length > 3) {
-                lyrics += trimmedLine + '\n\n';
+          if (listItems.isNotEmpty) {
+            for (int i = 0; i < listItems.length; i++) {
+              final li = listItems[i];
+              final text = li.text.trim();
+              print('LI[$i]: ${text.substring(0, text.length > 50 ? 50 : text.length)}...');
+              
+              // Filter konten share/social media
+              if (text.isNotEmpty && 
+                  !text.toLowerCase().contains('bagikan') &&
+                  !text.toLowerCase().contains('suka') &&
+                  !text.toLowerCase().contains('komentar') &&
+                  !text.toLowerCase().contains('facebook') &&
+                  !text.toLowerCase().contains('twitter') &&
+                  !text.toLowerCase().contains('whatsapp') &&
+                  !text.toLowerCase().contains('share') &&
+                  !text.toLowerCase().contains('tweet') &&
+                  !text.toLowerCase().contains('like') &&
+                  !text.toLowerCase().contains('follow') &&
+                  text.length > 3) {
+                // Normalisasi: gabung semua baris dalam <li> jadi satu (hapus semua newline, ganti dengan spasi)
+                // Lalu hapus spasi berlebihan
+                final normalizedText = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+                if (normalizedText.isNotEmpty) {
+                  if (lyrics.isNotEmpty) {
+                    lyrics += '\n\n'; // Setiap <li> dipisahkan dengan double enter
+                  }
+                  lyrics += normalizedText;
+                }
+              }
+            }
+          } else {
+            print('Tidak ada <li>, coba ambil dari <p>');
+            // Fallback: jika tidak ada <li>, ambil dari paragraf
+            final paragraphs = content.querySelectorAll('p');
+            print('Jumlah <p> ditemukan: ${paragraphs.length}');
+            
+            for (int i = 0; i < paragraphs.length; i++) {
+              final p = paragraphs[i];
+              final text = p.text.trim();
+              print('P[$i]: ${text.substring(0, text.length > 50 ? 50 : text.length)}...');
+              
+              if (text.isNotEmpty && 
+                  !text.toLowerCase().contains('bagikan') &&
+                  !text.toLowerCase().contains('suka') &&
+                  !text.toLowerCase().contains('komentar') &&
+                  !text.toLowerCase().contains('facebook') &&
+                  !text.toLowerCase().contains('twitter') &&
+                  !text.toLowerCase().contains('whatsapp') &&
+                  !text.toLowerCase().contains('share') &&
+                  !text.toLowerCase().contains('tweet') &&
+                  !text.toLowerCase().contains('like') &&
+                  !text.toLowerCase().contains('follow') &&
+                  text.length > 3) {
+                final normalizedText = text.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
+                if (normalizedText.isNotEmpty) {
+                  if (lyrics.isNotEmpty) {
+                    lyrics += '\n\n';
+                  }
+                  lyrics += normalizedText;
+                }
               }
             }
           }
+          
+          print('Hasil akhir lyrics length: ${lyrics.length}');
+          print('Jumlah newline dalam lyrics: ${lyrics.split('\n').length - 1}');
+          print('Preview lyrics (dengan newline terlihat):');
+          print(lyrics.substring(0, lyrics.length > 300 ? 300 : lyrics.length).replaceAll('\n', '\\n'));
+          print('=== END DEBUG ===');
+        } else {
+          print('=== DEBUG: Content tidak ditemukan ===');
         }
 
         if (lyrics.isNotEmpty) {
+          // Bersihkan baris kosong berlebihan (maksimal 2 newline antar bait)
+          lyrics = lyrics.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+          
           setState(() {
             _bukuEndeLyrics[url] = lyrics;
             _loadingLyrics[url] = false;
@@ -1393,26 +1433,19 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                         );
                       }
                       
-                      // Pisahkan berdasarkan double newline atau baris kosong
-                      final parts = lyricsText.split(RegExp(r'\n\s*\n'));
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: parts.map((part) {
-                          final trimmedPart = part.trim();
-                          if (trimmedPart.isEmpty) return const SizedBox.shrink();
-                          
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: Text(
-                              trimmedPart,
-                              style: TextStyle(
-                                fontSize: 14,
-                                height: 1.8,
-                                color: Colors.grey[800],
-                              ),
-                            ),
-                          );
-                        }).toList(),
+                      // Bersihkan dan tampilkan lirik dengan spasi yang rapi
+                      // Hapus baris kosong berlebihan (maksimal 1 newline antar bait)
+                      String cleanedText = lyricsText
+                          .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+                          .trim();
+                      
+                      return Text(
+                        cleanedText,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          color: Colors.grey[800],
+                        ),
                       );
                     },
                   ),
