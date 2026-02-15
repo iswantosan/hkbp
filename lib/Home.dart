@@ -374,11 +374,53 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
     return finalUrl;
   }
 
-  /// Scrape terjemahan Batak dari WordPress
+  /// Mapping dari bookAbbr ke kode alkitab.mobi
+  String _getAlkitabMobiCode(String bookAbbr) {
+    final Map<String, String> mapping = {
+      'Gen': 'Kej', 'Exo': 'Kel', 'Lev': 'Ima', 'Num': 'Bil', 'Deu': 'Ula',
+      'Jos': 'Yos', 'Jud': 'Hak', 'Rut': 'Rut',
+      '1Sa': '1Sa', '2Sa': '2Sa', '1Ki': '1Ra', '2Ki': '2Ra',
+      '1Ch': '1Ta', '2Ch': '2Ta', 'Ezr': 'Ezr', 'Neh': 'Neh', 'Est': 'Est',
+      'Job': 'Ayb', 'Psa': 'Mzm', 'Pro': 'Ams', 'Ecc': 'Pkh', 'Sol': 'Kid',
+      'Isa': 'Yes', 'Jer': 'Yer', 'Lam': 'Rat', 'Eze': 'Yeh', 'Dan': 'Dan',
+      'Hos': 'Hos', 'Joe': 'Yoe', 'Amo': 'Amo', 'Oba': 'Oba', 'Jon': 'Yun',
+      'Mic': 'Mik', 'Nah': 'Nah', 'Hab': 'Hab', 'Zep': 'Zef', 'Hag': 'Hag',
+      'Zec': 'Zak', 'Mal': 'Mal',
+      'Mat': 'Mat', 'Mar': 'Mrk', 'Luk': 'Luk', 'Joh': 'Yoh', 'Act': 'Kis',
+      'Rom': 'Rom', '1Co': '1Ko', '2Co': '2Ko', 'Gal': 'Gal', 'Eph': 'Efe',
+      'Phi': 'Flp', 'Col': 'Kol', '1Th': '1Te', '2Th': '2Te', '1Ti': '1Ti',
+      '2Ti': '2Ti', 'Tit': 'Tit', 'Phm': 'Flm', 'Heb': 'Ibr', 'Jam': 'Yak',
+      '1Pe': '1Pt', '2Pe': '2Pt', '1Jo': '1Yo', '2Jo': '2Yo', '3Jo': '3Yo',
+      'Jude': 'Yud', 'Rev': 'Why',
+    };
+    return mapping[bookAbbr] ?? bookAbbr;
+  }
+
+  /// Scrape terjemahan Batak dari alkitab.mobi/toba/
   Future<String?> _scrapeBatakVerse(String bookName, int chapter, int verse) async {
     try {
-      final url = _getBookUrlPath(bookName, chapter);
-      debugPrint('Scraping Batak - Book: $bookName, Chapter: $chapter, Verse: $verse');
+      // Gunakan bookAbbr untuk mendapatkan kode alkitab.mobi
+      // Cari bookAbbr dari bookName
+      String? bookAbbr;
+      for (final category in bibleBooks) {
+        for (final book in category['items'] as List) {
+          if (book['name'] == bookName) {
+            bookAbbr = book['code'];
+            break;
+          }
+        }
+        if (bookAbbr != null) break;
+      }
+      
+      if (bookAbbr == null) {
+        debugPrint('Book not found: $bookName');
+        return null;
+      }
+      
+      final mobiCode = _getAlkitabMobiCode(bookAbbr);
+      final url = 'https://alkitab.mobi/toba/$mobiCode/$chapter/$verse/';
+      
+      debugPrint('Scraping Batak - Book: $bookName ($bookAbbr -> $mobiCode), Chapter: $chapter, Verse: $verse');
       debugPrint('Scraping Batak from: $url');
       
       final response = await http.get(
@@ -391,99 +433,51 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
       if (response.statusCode == 200) {
         final document = html_parser.parse(response.body);
         
-        // Cari tabel yang berisi ayat-ayat
-        // Format: Kolom pertama = Batak Toba, Kolom kedua = Indonesia
-        // Format teks: "28:16 Ia susian na sapuluh sada ai..."
-        final tables = document.querySelectorAll('table');
+        // Cari elemen <p> yang mengandung "Toba:"
+        // Format: <p><strong><a href="..."><span class="reftext">Toba:</span></a></strong> (I.) Di mula ni mulana ditompa Debata langit dohot tano on.</p>
+        final paragraphs = document.querySelectorAll('p');
         
-        for (final table in tables) {
-          final rows = table.querySelectorAll('tr');
+        for (final p in paragraphs) {
+          final text = p.text.trim();
           
-          for (final row in rows) {
-            final cells = row.querySelectorAll('td');
+          // Cek apakah paragraf ini mengandung "Toba:"
+          if (text.contains('Toba:') || p.querySelector('span.reftext') != null) {
+            // Ambil semua teks setelah "Toba:"
+            // Hapus "Toba:" dan ambil sisa teks
+            String batakText = text;
             
-            if (cells.length >= 2) {
-              // Kolom pertama berisi nomor ayat dan teks Batak Toba
-              final firstCell = cells[0];
-              final firstCellText = firstCell.text.trim();
-              
-              // Cek apakah ini ayat yang kita cari
-              // Pattern: "28:16" di awal atau di tengah teks
-              final versePattern = RegExp('^$chapter:$verse\\s+', caseSensitive: false);
-              final versePatternAlt = RegExp('\\b$chapter:$verse\\b', caseSensitive: false);
-              
-              if (versePattern.hasMatch(firstCellText) || versePatternAlt.hasMatch(firstCellText)) {
-                // Ambil teks Batak (kolom pertama, setelah nomor ayat)
-                String batakText = firstCellText;
-                
-                // Hapus nomor ayat dari awal dengan berbagai pattern
-                // Pattern 1: "28:16 " di awal (dengan spasi setelahnya)
-                batakText = batakText.replaceAll(RegExp(r'^\d+:\d+\s+'), '');
-                // Pattern 2: "chapter:verse" diikuti spasi (case insensitive)
-                batakText = batakText.replaceAll(RegExp('^$chapter:$verse\\s+', caseSensitive: false), '');
-                batakText = batakText.trim();
-                
-                // Jika masih kosong atau terlalu pendek, coba ambil dari inner HTML
-                if (batakText.isEmpty || batakText.length < 10) {
-                  final innerHtml = firstCell.innerHtml;
-                  
-                  // Coba berbagai pattern untuk mengambil teks setelah nomor ayat
-                  // Pattern 1: "28:16" diikuti langsung teks (bisa ada tag HTML)
-                  final htmlMatch1 = RegExp('$chapter:$verse\\s*[^>]*>([^<]+)', caseSensitive: false, dotAll: true).firstMatch(innerHtml);
-                  if (htmlMatch1 != null && htmlMatch1.group(1) != null) {
-                    batakText = htmlMatch1.group(1)!.trim();
-                  }
-                  
-                  // Pattern 2: "28:16 " diikuti teks (tanpa tag)
-                  if (batakText.isEmpty || batakText.length < 10) {
-                    final htmlMatch2 = RegExp('$chapter:$verse\\s+([^|]+)', caseSensitive: false, dotAll: true).firstMatch(innerHtml);
-                    if (htmlMatch2 != null && htmlMatch2.group(1) != null) {
-                      batakText = _cleanText(htmlMatch2.group(1)!).trim();
-                    }
-                  }
-                  
-                  // Pattern 3: Ambil semua teks setelah "28:16" sampai akhir atau sampai pipe
-                  if (batakText.isEmpty || batakText.length < 10) {
-                    final htmlMatch3 = RegExp('$chapter:$verse\\s+(.+?)(?:\\||<|\\\$)', caseSensitive: false, dotAll: true).firstMatch(innerHtml);
-                    if (htmlMatch3 != null && htmlMatch3.group(1) != null) {
-                      batakText = _cleanText(htmlMatch3.group(1)!).trim();
-                    }
-                  }
-                }
-                
-                // Validasi: teks Batak biasanya mengandung karakter khusus Batak atau minimal panjang tertentu
-                if (batakText.isNotEmpty && batakText.length > 5) {
-                  return _cleanText(batakText);
-                }
-              }
+            // Hapus "Toba:" dari awal
+            batakText = batakText.replaceFirst(RegExp(r'^Toba:\s*'), '');
+            
+            // Jika masih ada prefix seperti "(I.)" di awal, hapus juga
+            batakText = batakText.replaceFirst(RegExp(r'^\([^)]+\)\s*'), '');
+            
+            batakText = batakText.trim();
+            
+            if (batakText.isNotEmpty && batakText.length > 5) {
+              return _cleanText(batakText);
             }
           }
         }
         
-        // Alternatif: cari di semua elemen dengan pattern ayat
-        // Cari di semua teks body untuk pattern "28:16 Teks Batak"
-        final allText = document.body?.text ?? '';
-        
-        // Pattern 1: "28:16 " diikuti teks sampai baris baru atau sampai "28:17"
-        final versePattern1 = RegExp('$chapter:$verse\\s+([^\\n]+?)(?=\\n\\s*$chapter:|\\n\\s*\\||\\\$)', multiLine: true, caseSensitive: false, dotAll: true);
-        final match1 = versePattern1.firstMatch(allText);
-        if (match1 != null && match1.group(1) != null) {
-          final batakText = match1.group(1)!.trim();
-          // Pastikan tidak mengandung teks Indonesia (biasanya lebih pendek atau tidak mengandung karakter Batak)
-          if (batakText.isNotEmpty && batakText.length > 10) {
-            return _cleanText(batakText);
-          }
-        }
-        
-        // Pattern 2: Fallback - ambil teks setelah "28:16 " sampai akhir atau sampai pattern ayat berikutnya
-        final versePattern2 = RegExp('$chapter:$verse\\s+([^\\n]+)', multiLine: true, caseSensitive: false);
-        final match2 = versePattern2.firstMatch(allText);
-        if (match2 != null && match2.group(1) != null) {
-          final batakText = match2.group(1)!.trim();
-          // Ambil hanya sampai 500 karakter pertama (untuk menghindari mengambil terlalu banyak)
-          final limitedText = batakText.length > 500 ? batakText.substring(0, 500) : batakText;
-          if (limitedText.isNotEmpty && limitedText.length > 10) {
-            return _cleanText(limitedText);
+        // Alternatif: cari dengan selector yang lebih spesifik
+        final tobaElement = document.querySelector('p strong a span.reftext');
+        if (tobaElement != null) {
+          // Cari parent <p> secara manual
+          var current = tobaElement.parent;
+          while (current != null) {
+            if (current.localName == 'p') {
+              String batakText = current.text.trim();
+              batakText = batakText.replaceFirst(RegExp(r'^Toba:\s*'), '');
+              batakText = batakText.replaceFirst(RegExp(r'^\([^)]+\)\s*'), '');
+              batakText = batakText.trim();
+              
+              if (batakText.isNotEmpty && batakText.length > 5) {
+                return _cleanText(batakText);
+              }
+              break;
+            }
+            current = current.parent;
           }
         }
       }
@@ -1000,6 +994,15 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                                             height: 1.6,
                                             color: Colors.orange[900],
                                             fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Sumber: https://alkitab.mobi/',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.orange[600],
+                                            fontStyle: FontStyle.normal,
                                           ),
                                         ),
                                       ],
