@@ -359,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       _buildModernMenuItem(Icons.account_balance_wallet_rounded, "Laporan", Colors.red, () => _navigateTo(const FinancialReportPage())),
                       _buildModernMenuItem(Icons.people_alt_rounded, "Majelis", Colors.orange, () => _navigateTo(const ClergyPage())),
                       _buildModernMenuItem(Icons.home_work, "Gedung Serba Guna", Colors.brown, () => _navigateTo(const GedungSerbagunaPage())),
-                      _buildModernMenuItem(Icons.auto_stories, "Alkitab", Colors.indigo, () => _navigateTo(const Home())),
+                      _buildModernMenuItem(Icons.auto_stories, "Buku", Colors.indigo, () => _navigateTo(const Home())),
                       _buildModernMenuItem(Icons.business_center_rounded, "Sekretariat", Colors.teal, () => _navigateTo(const ContactPage())),
                     ],
                   ),

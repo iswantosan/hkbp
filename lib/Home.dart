@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' as html_parser;
 import 'utils/error_handler.dart';
@@ -22,6 +21,23 @@ const Verse({
 });
 }
 
+/// Model untuk Buku Ende
+class BukuEnde {
+  final String title;
+  final int nomorEnde;
+  final int? nomorLogu;
+  final String url;
+  final String? lyrics; // Teks lagu (akan di-scrape saat dibuka)
+
+  const BukuEnde({
+    required this.title,
+    required this.nomorEnde,
+    this.nomorLogu,
+    required this.url,
+    this.lyrics,
+  });
+}
+
 class Home extends StatefulWidget {
   const Home({super.key});
 
@@ -29,7 +45,7 @@ class Home extends StatefulWidget {
   State<Home> createState() => _HomeState();
 }
 
-class _HomeState extends State<Home> {
+class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
   /// State utama
   List<Verse> _verses = const [];
   bool _isLoading = true;
@@ -38,6 +54,15 @@ class _HomeState extends State<Home> {
   /// State untuk terjemahan Batak
   Map<String, String> _batakVerses = {}; // Key: "book_chapter_verse", Value: text
   Map<String, bool> _loadingBatak = {}; // Key: "book_chapter_verse", Value: loading state
+
+  /// State untuk Buku Ende
+  List<BukuEnde> _bukuEndeList = [];
+  List<BukuEnde> _filteredBukuEndeList = [];
+  bool _isLoadingBukuEnde = false;
+  String? _bukuEndeError;
+  final TextEditingController _searchController = TextEditingController();
+  Map<String, String> _bukuEndeLyrics = {}; // Key: URL, Value: lyrics
+  Map<String, bool> _loadingLyrics = {}; // Key: URL, Value: loading state
 
   /// Variabel filter
   String selectedBook = 'Mat';
@@ -49,6 +74,7 @@ class _HomeState extends State<Home> {
   late final TextEditingController _chapterCtrl;
   late final TextEditingController _startCtrl;
   late final TextEditingController _endCtrl;
+  late final TabController _tabController;
 
   final List<Map<String, dynamic>> bibleBooks = [
     {
@@ -132,17 +158,22 @@ class _HomeState extends State<Home> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _chapterCtrl = TextEditingController(text: selectedChapter);
     _startCtrl = TextEditingController(text: startVerse);
     _endCtrl = TextEditingController(text: endVerse);
+    _searchController.addListener(_onSearchChanged);
     _fetchData();
+    _fetchBukuEndeList();
   }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _chapterCtrl.dispose();
     _startCtrl.dispose();
     _endCtrl.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -168,17 +199,55 @@ class _HomeState extends State<Home> {
   /// Mapping kode kitab ke nama untuk API
   String _getBookNameForAPI(String code) {
     final allBooks = bibleBooks.expand((cat) => cat['items'] as List).toList();
-    final book = allBooks.firstWhere(
-      (b) => b['code'] == code,
-      orElse: () => {'name': 'Matius'},
-    );
-    return book['name'] as String;
+    
+    // Mapping alternatif untuk kode yang mungkin berbeda dari API
+    final alternativeCodeMap = {
+      'Kej': 'Gen',  // API mungkin mengembalikan "Kej" bukan "Gen"
+      'Kel': 'Exo',
+      'Ima': 'Lev',
+      'Bil': 'Num',
+      'Ula': 'Deu',
+      // Tambahkan mapping lain jika diperlukan
+    };
+    
+    // Cek apakah ada mapping alternatif
+    final normalizedCode = alternativeCodeMap[code] ?? code;
+    
+    try {
+      final book = allBooks.firstWhere(
+        (b) => b['code'] == normalizedCode || b['code'] == code,
+      );
+      final bookName = book['name'] as String;
+      debugPrint('_getBookNameForAPI: code=$code (normalized=$normalizedCode) -> name=$bookName');
+      return bookName;
+    } catch (e) {
+      debugPrint('_getBookNameForAPI: ERROR - code "$code" (normalized="$normalizedCode") not found! Available codes: ${allBooks.map((b) => b['code']).join(", ")}');
+      // Fallback: coba cari berdasarkan code yang mirip atau return code as is
+      return code;
+    }
   }
 
   /// Mapping nama kitab ke URL path WordPress
   String _getBookUrlPath(String bookName, int chapter) {
+    // Cek apakah Perjanjian Lama atau Baru
+    final oldTestamentBooks = bibleBooks[0]['items'] as List;
+    final isOldTestament = oldTestamentBooks.any((b) => b['name'] == bookName);
+    
+    debugPrint('_getBookUrlPath: bookName="$bookName", isOldTestament=$isOldTestament');
+    if (!isOldTestament) {
+      // Double check - mungkin ada masalah dengan matching
+      final newTestamentBooks = bibleBooks[1]['items'] as List;
+      final isNewTestament = newTestamentBooks.any((b) => b['name'] == bookName);
+      debugPrint('_getBookUrlPath: isNewTestament=$isNewTestament');
+      debugPrint('_getBookUrlPath: Old Testament books: ${oldTestamentBooks.map((b) => b['name']).take(5).join(", ")}...');
+      debugPrint('_getBookUrlPath: New Testament books: ${newTestamentBooks.map((b) => b['name']).take(5).join(", ")}...');
+    }
+    
     // Mapping nama kitab ke format URL WordPress
+    // Perjanjian Lama menggunakan format: kejadian-1-musa/kejadian-1-{chapter}/
+    // Perjanjian Baru menggunakan format: matius-2/matius-2-{chapter}/
     final bookMap = {
+      // PERJANJIAN LAMA
       'Kejadian': 'kejadian-1-musa',
       'Keluaran': 'keluaran-2-musa',
       'Imamat': 'imamat-3-musa',
@@ -218,7 +287,8 @@ class _HomeState extends State<Home> {
       'Hagai': 'hagai',
       'Zakharia': 'zakharia',
       'Maleakhi': 'maleakhi',
-      'Matius': 'matius',
+      // PERJANJIAN BARU - format berbeda: matius-2, markus-2, dll
+      'Matius': 'matius-2',
       'Markus': 'markus',
       'Lukas': 'lukas',
       'Yohanes': 'yohanes',
@@ -248,16 +318,67 @@ class _HomeState extends State<Home> {
     };
 
     final urlPath = bookMap[bookName] ?? bookName.toLowerCase().replaceAll(' ', '-');
-    final isOldTestament = bibleBooks[0]['items'].any((b) => b['name'] == bookName);
-    final testament = isOldTestament ? 'perjanjian-lam' : 'perjanjian-baru';
     
-    return 'https://bibeltobaindonesia.wordpress.com/$testament/$urlPath/$urlPath-$chapter/';
+    // Pastikan testament sudah benar berdasarkan isOldTestament
+    // Jika tidak ada di mapping, coba deteksi ulang berdasarkan bookName
+    bool finalIsOldTestament = isOldTestament;
+    if (!isOldTestament && !bibleBooks[1]['items'].any((b) => b['name'] == bookName)) {
+      // Jika tidak ditemukan di kedua kategori, coba cek berdasarkan bookMap
+      // Jika ada di bagian PERJANJIAN LAMA di bookMap, gunakan perjanjian-lam
+      final oldTestamentKeys = ['Kejadian', 'Keluaran', 'Imamat', 'Bilangan', 'Ulangan', 
+                                 'Yosua', 'Hakim-hakim', 'Rut', '1 Samuel', '2 Samuel',
+                                 '1 Raja-raja', '2 Raja-raja', '1 Tawarikh', '2 Tawarikh',
+                                 'Ezra', 'Nehemia', 'Ester', 'Ayub', 'Mazmur', 'Amsal',
+                                 'Pengkhotbah', 'Kidung Agung', 'Yesaya', 'Yeremia', 'Ratapan',
+                                 'Yehezkiel', 'Daniel', 'Hosea', 'Yoel', 'Amos', 'Obaja',
+                                 'Yunus', 'Mikha', 'Nahum', 'Habakuk', 'Zefanya', 'Hagai',
+                                 'Zakharia', 'Maleakhi'];
+      if (oldTestamentKeys.contains(bookName)) {
+        finalIsOldTestament = true;
+        debugPrint('_getBookUrlPath: FIXED - bookName "$bookName" should be Old Testament');
+      }
+    }
+    
+    final testament = finalIsOldTestament ? 'perjanjian-lam' : 'perjanjian-baru';
+    debugPrint('_getBookUrlPath: final testament=$testament, urlPath=$urlPath');
+    
+    // Format URL:
+    // Perjanjian Lama: /perjanjian-lam/kejadian-1-musa/kejadian-1/ (bukan kejadian-1-musa-1)
+    // Perjanjian Baru: /perjanjian-baru/matius-2/matius-{chapter}/ (bukan matius-2-{chapter})
+    String chapterUrl;
+    if (finalIsOldTestament) {
+      // Perjanjian Lama: ekstrak nama kitab dasar dari bookName dan tambahkan chapter
+      // Format: {bookName-lowercase-hyphenated}-{chapter}
+      // Contoh: 
+      //   "Kejadian" -> "kejadian-1"
+      //   "Keluaran" -> "keluaran-2"
+      //   "1 Samuel" -> "1-samuel-1"
+      //   "Kidung Agung" -> "kidung-agung-1"
+      final baseBookName = bookName.toLowerCase().replaceAll(' ', '-');
+      chapterUrl = '$baseBookName-$chapter';
+      debugPrint('_getBookUrlPath: Old Testament - bookName="$bookName" -> baseBookName="$baseBookName" -> chapterUrl="$chapterUrl"');
+    } else {
+      // Perjanjian Baru: ekstrak nama kitab tanpa suffix angka (misal: matius-2 -> matius)
+      // Untuk Matius khusus: matius-2 -> matius-{chapter}
+      if (bookName == 'Matius') {
+        chapterUrl = 'matius-$chapter';
+      } else {
+        // Untuk kitab lain, hapus suffix angka di urlPath jika ada
+        final baseName = urlPath.replaceAll(RegExp(r'-\d+$'), ''); // Hapus suffix angka seperti -2
+        chapterUrl = '$baseName-$chapter';
+      }
+    }
+    
+    final finalUrl = 'https://bibeltobaindonesia.wordpress.com/$testament/$urlPath/$chapterUrl/';
+    debugPrint('_getBookUrlPath: final URL=$finalUrl');
+    return finalUrl;
   }
 
   /// Scrape terjemahan Batak dari WordPress
   Future<String?> _scrapeBatakVerse(String bookName, int chapter, int verse) async {
     try {
       final url = _getBookUrlPath(bookName, chapter);
+      debugPrint('Scraping Batak - Book: $bookName, Chapter: $chapter, Verse: $verse');
       debugPrint('Scraping Batak from: $url');
       
       final response = await http.get(
@@ -271,6 +392,8 @@ class _HomeState extends State<Home> {
         final document = html_parser.parse(response.body);
         
         // Cari tabel yang berisi ayat-ayat
+        // Format: Kolom pertama = Batak Toba, Kolom kedua = Indonesia
+        // Format teks: "28:16 Ia susian na sapuluh sada ai..."
         final tables = document.querySelectorAll('table');
         
         for (final table in tables) {
@@ -280,31 +403,55 @@ class _HomeState extends State<Home> {
             final cells = row.querySelectorAll('td');
             
             if (cells.length >= 2) {
-              // Kolom pertama biasanya berisi nomor ayat dan teks Batak
-              final firstCell = cells[0].text.trim();
+              // Kolom pertama berisi nomor ayat dan teks Batak Toba
+              final firstCell = cells[0];
+              final firstCellText = firstCell.text.trim();
               
               // Cek apakah ini ayat yang kita cari
-              // Format: "1:1 Teks Batak" atau "1:1" diikuti teks
-              if (firstCell.contains('$chapter:$verse') || 
-                  firstCell.startsWith('$verse:') ||
-                  firstCell.contains(':$verse ')) {
+              // Pattern: "28:16" di awal atau di tengah teks
+              final versePattern = RegExp('^$chapter:$verse\\s+', caseSensitive: false);
+              final versePatternAlt = RegExp('\\b$chapter:$verse\\b', caseSensitive: false);
+              
+              if (versePattern.hasMatch(firstCellText) || versePatternAlt.hasMatch(firstCellText)) {
                 // Ambil teks Batak (kolom pertama, setelah nomor ayat)
-                String batakText = firstCell;
+                String batakText = firstCellText;
                 
-                // Hapus nomor ayat dari awal
-                batakText = batakText.replaceAll(RegExp(r'^\d+:\d+\s*'), '');
-                batakText = batakText.replaceAll(RegExp(r'^$verse:\s*'), '');
+                // Hapus nomor ayat dari awal dengan berbagai pattern
+                // Pattern 1: "28:16 " di awal (dengan spasi setelahnya)
+                batakText = batakText.replaceAll(RegExp(r'^\d+:\d+\s+'), '');
+                // Pattern 2: "chapter:verse" diikuti spasi (case insensitive)
+                batakText = batakText.replaceAll(RegExp('^$chapter:$verse\\s+', caseSensitive: false), '');
+                batakText = batakText.trim();
                 
-                // Jika masih kosong, coba ambil dari inner HTML
+                // Jika masih kosong atau terlalu pendek, coba ambil dari inner HTML
                 if (batakText.isEmpty || batakText.length < 10) {
-                  final innerHtml = cells[0].innerHtml;
-                  // Cari teks setelah tag penutup nomor ayat
-                  final match = RegExp(r'>([^<]+)<').firstMatch(innerHtml);
-                  if (match != null) {
-                    batakText = match.group(1) ?? '';
+                  final innerHtml = firstCell.innerHtml;
+                  
+                  // Coba berbagai pattern untuk mengambil teks setelah nomor ayat
+                  // Pattern 1: "28:16" diikuti langsung teks (bisa ada tag HTML)
+                  final htmlMatch1 = RegExp('$chapter:$verse\\s*[^>]*>([^<]+)', caseSensitive: false, dotAll: true).firstMatch(innerHtml);
+                  if (htmlMatch1 != null && htmlMatch1.group(1) != null) {
+                    batakText = htmlMatch1.group(1)!.trim();
+                  }
+                  
+                  // Pattern 2: "28:16 " diikuti teks (tanpa tag)
+                  if (batakText.isEmpty || batakText.length < 10) {
+                    final htmlMatch2 = RegExp('$chapter:$verse\\s+([^|]+)', caseSensitive: false, dotAll: true).firstMatch(innerHtml);
+                    if (htmlMatch2 != null && htmlMatch2.group(1) != null) {
+                      batakText = _cleanText(htmlMatch2.group(1)!).trim();
+                    }
+                  }
+                  
+                  // Pattern 3: Ambil semua teks setelah "28:16" sampai akhir atau sampai pipe
+                  if (batakText.isEmpty || batakText.length < 10) {
+                    final htmlMatch3 = RegExp('$chapter:$verse\\s+(.+?)(?:\\||<|\\\$)', caseSensitive: false, dotAll: true).firstMatch(innerHtml);
+                    if (htmlMatch3 != null && htmlMatch3.group(1) != null) {
+                      batakText = _cleanText(htmlMatch3.group(1)!).trim();
+                    }
                   }
                 }
                 
+                // Validasi: teks Batak biasanya mengandung karakter khusus Batak atau minimal panjang tertentu
                 if (batakText.isNotEmpty && batakText.length > 5) {
                   return _cleanText(batakText);
                 }
@@ -314,11 +461,30 @@ class _HomeState extends State<Home> {
         }
         
         // Alternatif: cari di semua elemen dengan pattern ayat
+        // Cari di semua teks body untuk pattern "28:16 Teks Batak"
         final allText = document.body?.text ?? '';
-        final versePattern = RegExp(r'$chapter:$verse\s+([^\n]+)', multiLine: true);
-        final match = versePattern.firstMatch(allText);
-        if (match != null) {
-          return _cleanText(match.group(1) ?? '');
+        
+        // Pattern 1: "28:16 " diikuti teks sampai baris baru atau sampai "28:17"
+        final versePattern1 = RegExp('$chapter:$verse\\s+([^\\n]+?)(?=\\n\\s*$chapter:|\\n\\s*\\||\\\$)', multiLine: true, caseSensitive: false, dotAll: true);
+        final match1 = versePattern1.firstMatch(allText);
+        if (match1 != null && match1.group(1) != null) {
+          final batakText = match1.group(1)!.trim();
+          // Pastikan tidak mengandung teks Indonesia (biasanya lebih pendek atau tidak mengandung karakter Batak)
+          if (batakText.isNotEmpty && batakText.length > 10) {
+            return _cleanText(batakText);
+          }
+        }
+        
+        // Pattern 2: Fallback - ambil teks setelah "28:16 " sampai akhir atau sampai pattern ayat berikutnya
+        final versePattern2 = RegExp('$chapter:$verse\\s+([^\\n]+)', multiLine: true, caseSensitive: false);
+        final match2 = versePattern2.firstMatch(allText);
+        if (match2 != null && match2.group(1) != null) {
+          final batakText = match2.group(1)!.trim();
+          // Ambil hanya sampai 500 karakter pertama (untuk menghindari mengambil terlalu banyak)
+          final limitedText = batakText.length > 500 ? batakText.substring(0, 500) : batakText;
+          if (limitedText.isNotEmpty && limitedText.length > 10) {
+            return _cleanText(limitedText);
+          }
         }
       }
       
@@ -342,9 +508,13 @@ class _HomeState extends State<Home> {
     });
 
     try {
-      final bookName = _getBookNameForAPI(verse.bookAbbr);
+      // Gunakan verse.bookName langsung karena lebih reliable daripada mapping dari bookAbbr
+      // API mungkin mengembalikan bookAbbr yang berbeda (misal: "Kej" vs "Gen")
+      final bookName = verse.bookName.isNotEmpty ? verse.bookName : _getBookNameForAPI(verse.bookAbbr);
       final chapter = verse.chapter;
       final verseNum = verse.verse;
+      
+      debugPrint('Fetch Batak - verse.bookAbbr: ${verse.bookAbbr}, verse.bookName: ${verse.bookName}, final bookName: $bookName, chapter: $chapter, verse: $verseNum');
       
       // Scrape dari WordPress
       final batakText = await _scrapeBatakVerse(bookName, chapter, verseNum);
@@ -436,9 +606,15 @@ class _HomeState extends State<Home> {
     setState(() {
       _isLoading = true;
       _error = null;
+      // Clear verses terlebih dahulu untuk memastikan data lama tidak ditampilkan
+      _verses = [];
+      // Clear juga terjemahan Batak yang sudah di-cache
+      _batakVerses.clear();
+      _loadingBatak.clear();
     });
 
     final passage = _buildPassage();
+    debugPrint('_fetchData: selectedBook=$selectedBook, passage=$passage');
     final url = Uri.parse(
       'https://api.ayt.co/v1/passage.php?passage=${Uri.encodeComponent(passage)}&source=yourwebsite.com',
     );
@@ -474,60 +650,90 @@ class _HomeState extends State<Home> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          // 1. MODERN GRADIENT HEADER
-          SliverToBoxAdapter(
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(15, 60, 25, 30),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Colors.blue[900]!, Colors.blue[700]!],
-                ),
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(30),
-                  bottomRight: Radius.circular(30),
-                ),
+      body: Column(
+        children: [
+          // Header dengan Tab Bar
+          Container(
+            padding: const EdgeInsets.fromLTRB(15, 60, 25, 0),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Colors.blue[900]!, Colors.blue[700]!],
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.arrow_back_ios_new,
-                            color: Colors.white, size: 20),
-                      ),
-                      const Icon(Icons.auto_stories_rounded,
-                          color: Colors.white, size: 24),
-                      const SizedBox(width: 10),
-                      const Text(
-                        "Alkitab Digital",
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.only(left: 50),
-                    child: Text(
-                      "Baca dan cari firman Tuhan setiap hari.",
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
-                    ),
-                  ),
-                ],
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(30),
+                bottomRight: Radius.circular(30),
               ),
             ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.arrow_back_ios_new,
+                          color: Colors.white, size: 20),
+                    ),
+                    const Icon(Icons.auto_stories_rounded,
+                        color: Colors.white, size: 24),
+                    const SizedBox(width: 10),
+                    const Text(
+                      "Buku",
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(left: 50),
+                  child: Text(
+                    "Baca dan cari firman Tuhan setiap hari.",
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Tab Bar
+                TabBar(
+                  controller: _tabController,
+                  indicatorColor: Colors.white,
+                  indicatorWeight: 3,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white70,
+                  tabs: const [
+                    Tab(text: 'Alkitab Digital'),
+                    Tab(text: 'Buku Ende'),
+                  ],
+                ),
+              ],
+            ),
           ),
+          // Tab Bar View
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // Tab 1: Alkitab Digital
+                _buildAlkitabDigitalTab(),
+                // Tab 2: Buku Ende (kosong dulu)
+                _buildBukuEndeTab(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-          // 2. FILTER PANEL
-          SliverToBoxAdapter(
+  Widget _buildAlkitabDigitalTab() {
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(),
+      slivers: [
+        // FILTER PANEL
+        SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Container(
@@ -812,6 +1018,412 @@ class _HomeState extends State<Home> {
                   ),
                 ),
               ),
+      ],
+    );
+  }
+
+  /// Fetch daftar Buku Ende dari WordPress
+  Future<void> _fetchBukuEndeList() async {
+    setState(() {
+      _isLoadingBukuEnde = true;
+      _bukuEndeError = null;
+    });
+
+    try {
+      final url = 'https://bukuende.wordpress.com/daftar-isi-berdasarkan-abjad/';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      ).timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200) {
+        final document = html_parser.parse(response.body);
+        final List<BukuEnde> bukuEndeList = [];
+
+        // Cari semua link yang berisi "Buku Ende No."
+        final links = document.querySelectorAll('a');
+        
+        for (final link in links) {
+          final href = link.attributes['href'];
+          final text = link.text.trim();
+          
+          if (href != null && 
+              href.contains('bukuende.wordpress.com') &&
+              href.contains('/20') && // URL yang valid
+              text.isNotEmpty &&
+              (text.contains('Buku Ende No.') || text.contains('Buku Logu No.'))) {
+            
+            // Parse nomor dari text
+            // Format: "Judul Lagu (Buku Ende No. 115, Buku Logu No. 59)"
+            final endeMatch = RegExp(r'Buku Ende No\.\s*(\d+)').firstMatch(text);
+            final loguMatch = RegExp(r'Buku Logu No\.\s*(\d+)').firstMatch(text);
+            
+            if (endeMatch != null) {
+              final nomorEnde = int.tryParse(endeMatch.group(1) ?? '') ?? 0;
+              final nomorLogu = loguMatch != null ? int.tryParse(loguMatch.group(1) ?? '') : null;
+              
+              // Ambil judul lagu (sebelum tanda kurung)
+              final titleMatch = RegExp(r'^([^(]+)').firstMatch(text);
+              final title = titleMatch?.group(1)?.trim() ?? text;
+              
+              if (nomorEnde > 0 && title.isNotEmpty) {
+                bukuEndeList.add(BukuEnde(
+                  title: title,
+                  nomorEnde: nomorEnde,
+                  nomorLogu: nomorLogu,
+                  url: href,
+                ));
+              }
+            }
+          }
+        }
+
+        // Sort berdasarkan nomor
+        bukuEndeList.sort((a, b) => a.nomorEnde.compareTo(b.nomorEnde));
+
+        setState(() {
+          _bukuEndeList = bukuEndeList;
+          _filteredBukuEndeList = bukuEndeList;
+          _isLoadingBukuEnde = false;
+        });
+      } else {
+        setState(() {
+          _isLoadingBukuEnde = false;
+          _bukuEndeError = 'Gagal memuat daftar Buku Ende';
+        });
+      }
+    } catch (e) {
+      ErrorHandler.logError(e);
+      if (mounted) {
+        setState(() {
+          _isLoadingBukuEnde = false;
+          _bukuEndeError = ErrorHandler.getUserFriendlyMessage(e);
+        });
+      }
+    }
+  }
+
+  /// Fetch detail lagu Buku Ende
+  Future<void> _fetchBukuEndeLyrics(String url) async {
+    if (_bukuEndeLyrics.containsKey(url)) return;
+
+    setState(() {
+      _loadingLyrics[url] = true;
+    });
+
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final document = html_parser.parse(response.body);
+        
+        // Cari konten utama lagu
+        // Biasanya ada di div dengan class "entry-content" atau sejenisnya
+        final content = document.querySelector('.entry-content') ?? 
+                       document.querySelector('.post-content') ??
+                       document.querySelector('article');
+        
+        String lyrics = '';
+        if (content != null) {
+          // Hapus elemen share button dan social media sebelum mengambil konten
+          // Hapus semua elemen yang terkait dengan share/social media
+          content.querySelectorAll('.sharedaddy, .sd-block, .jetpack-share, .social-share, [class*="share"], [class*="facebook"], [class*="twitter"], [id*="share"], [id*="facebook"]').forEach((el) => el.remove());
+          
+          // Ambil semua paragraf
+          final paragraphs = content.querySelectorAll('p');
+          for (final p in paragraphs) {
+            final text = p.text.trim();
+            // Filter lebih ketat untuk menghapus konten share/social media
+            if (text.isNotEmpty && 
+                !text.toLowerCase().contains('bagikan') &&
+                !text.toLowerCase().contains('suka') &&
+                !text.toLowerCase().contains('komentar') &&
+                !text.toLowerCase().contains('facebook') &&
+                !text.toLowerCase().contains('twitter') &&
+                !text.toLowerCase().contains('whatsapp') &&
+                !text.toLowerCase().contains('share') &&
+                !text.toLowerCase().contains('tweet') &&
+                !text.toLowerCase().contains('like') &&
+                !text.toLowerCase().contains('follow') &&
+                text.length > 3) { // Minimal 3 karakter untuk menghindari teks kosong
+              lyrics += text + '\n\n';
+            }
+          }
+          
+          // Jika tidak ada paragraf, ambil semua text tapi filter dulu
+          if (lyrics.isEmpty) {
+            String rawText = content.text.trim();
+            // Hapus baris yang mengandung kata kunci share/social media
+            final lines = rawText.split('\n');
+            for (final line in lines) {
+              final trimmedLine = line.trim();
+              if (trimmedLine.isNotEmpty &&
+                  !trimmedLine.toLowerCase().contains('bagikan') &&
+                  !trimmedLine.toLowerCase().contains('suka') &&
+                  !trimmedLine.toLowerCase().contains('komentar') &&
+                  !trimmedLine.toLowerCase().contains('facebook') &&
+                  !trimmedLine.toLowerCase().contains('twitter') &&
+                  !trimmedLine.toLowerCase().contains('whatsapp') &&
+                  !trimmedLine.toLowerCase().contains('share') &&
+                  trimmedLine.length > 3) {
+                lyrics += trimmedLine + '\n\n';
+              }
+            }
+          }
+        }
+
+        if (lyrics.isNotEmpty) {
+          setState(() {
+            _bukuEndeLyrics[url] = lyrics;
+            _loadingLyrics[url] = false;
+          });
+        } else {
+          setState(() {
+            _bukuEndeLyrics[url] = 'Lirik tidak ditemukan';
+            _loadingLyrics[url] = false;
+          });
+        }
+      } else {
+        setState(() {
+          _bukuEndeLyrics[url] = 'Gagal memuat lirik';
+          _loadingLyrics[url] = false;
+        });
+      }
+    } catch (e) {
+      ErrorHandler.logError(e);
+      if (mounted) {
+        setState(() {
+          _bukuEndeLyrics[url] = ErrorHandler.getUserFriendlyMessage(e);
+          _loadingLyrics[url] = false;
+        });
+      }
+    }
+  }
+
+  /// Filter daftar berdasarkan search query
+  void _onSearchChanged() {
+    final query = _searchController.text.toLowerCase().trim();
+    
+    if (query.isEmpty) {
+      setState(() {
+        _filteredBukuEndeList = _bukuEndeList;
+      });
+    } else {
+      setState(() {
+        _filteredBukuEndeList = _bukuEndeList.where((lagu) {
+          return lagu.title.toLowerCase().contains(query) ||
+                 lagu.nomorEnde.toString().contains(query) ||
+                 (lagu.nomorLogu != null && lagu.nomorLogu.toString().contains(query));
+        }).toList();
+      });
+    }
+  }
+
+  Widget _buildBukuEndeTab() {
+    return Column(
+      children: [
+        // Search Bar
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: Colors.white,
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Cari lagu Buku Ende...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        _onSearchChanged();
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              filled: true,
+              fillColor: Colors.grey[50],
+            ),
+          ),
+        ),
+        // Content
+        Expanded(
+          child: _isLoadingBukuEnde
+              ? const Center(child: CircularProgressIndicator())
+              : _bukuEndeError != null
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.error_outline, size: 60, color: Colors.grey[300]),
+                          const SizedBox(height: 16),
+                          Text(
+                            _bukuEndeError!,
+                            style: const TextStyle(color: Colors.grey),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _fetchBukuEndeList,
+                            child: const Text('Coba Lagi'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _filteredBukuEndeList.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.search_off, size: 60, color: Colors.grey[300]),
+                              const SizedBox(height: 16),
+                              Text(
+                                _searchController.text.isNotEmpty
+                                    ? 'Tidak ada hasil pencarian'
+                                    : 'Tidak ada data',
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _filteredBukuEndeList.length,
+                          itemBuilder: (context, index) {
+                            final lagu = _filteredBukuEndeList[index];
+                            return _buildBukuEndeItem(lagu);
+                          },
+                        ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBukuEndeItem(BukuEnde lagu) {
+    final hasLyrics = _bukuEndeLyrics.containsKey(lagu.url);
+    final isLoading = _loadingLyrics[lagu.url] ?? false;
+    final lyrics = _bukuEndeLyrics[lagu.url];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ExpansionTile(
+        leading: CircleAvatar(
+          backgroundColor: Colors.indigo[100],
+          child: Text(
+            '${lagu.nomorEnde}',
+            style: TextStyle(
+              color: Colors.indigo[900],
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        title: Text(
+          lagu.title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+        ),
+        subtitle: Text(
+          'No. ${lagu.nomorEnde}${lagu.nomorLogu != null ? ' / Logu No. ${lagu.nomorLogu}' : ''}',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+        trailing: isLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(
+                hasLyrics ? Icons.expand_less : Icons.expand_more,
+                color: Colors.indigo[700],
+              ),
+        onExpansionChanged: (expanded) {
+          if (expanded && !hasLyrics && !isLoading) {
+            _fetchBukuEndeLyrics(lagu.url);
+          }
+        },
+        children: [
+          if (hasLyrics)
+            Container(
+              padding: const EdgeInsets.all(16),
+              width: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  // Tampilkan lirik dengan pemisahan yang jelas antar ayat/bagian
+                  Builder(
+                    builder: (context) {
+                      final lyricsText = lyrics ?? 'Lirik tidak tersedia';
+                      if (lyricsText == 'Lirik tidak tersedia') {
+                        return Text(
+                          lyricsText,
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.6,
+                            color: Colors.grey[800],
+                          ),
+                        );
+                      }
+                      
+                      // Pisahkan berdasarkan double newline atau baris kosong
+                      final parts = lyricsText.split(RegExp(r'\n\s*\n'));
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: parts.map((part) {
+                          final trimmedPart = part.trim();
+                          if (trimmedPart.isEmpty) return const SizedBox.shrink();
+                          
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: Text(
+                              trimmedPart,
+                              style: TextStyle(
+                                fontSize: 14,
+                                height: 1.8,
+                                color: Colors.grey[800],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            )
+          else if (isLoading)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
         ],
       ),
     );
