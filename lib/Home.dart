@@ -830,9 +830,9 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                   labelColor: Colors.white,
                   unselectedLabelColor: Colors.white70,
                   tabs: const [
-                    Tab(text: 'Alkitab Digital'),
-                    Tab(text: 'Buku Ende'),
-                    Tab(text: 'Kidung Jemaat'),
+                    Tab(text: 'Alkitab'),
+                    Tab(text: 'Ende'),
+                    Tab(text: 'K.Jemaat'),
                   ],
                 ),
               ],
@@ -991,6 +991,36 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
                         (context, index) {
+                      // Jika index adalah item terakhir, tampilkan copyright
+                      if (index == _verses.length) {
+                        return Container(
+                          margin: const EdgeInsets.only(top: 20, bottom: 20),
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            children: [
+                              Text(
+                                'Sumber data: https://api.ayt.co/',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[500],
+                                  fontStyle: FontStyle.normal,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Copyrighted by Yayasan Lentera Bangsa',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
                       final v = _verses[index];
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
@@ -1161,7 +1191,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                         ),
                       );
                     },
-                    childCount: _verses.length,
+                    childCount: _verses.length + 1,
                   ),
                 ),
               ),
@@ -1602,13 +1632,36 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                           .replaceAll(RegExp(r'\n{3,}'), '\n\n')
                           .trim();
                           
-                      return Text(
-                        cleanedText,
-                              style: TextStyle(
-                                fontSize: 14,
-                          height: 1.5,
-                                color: Colors.grey[800],
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            cleanedText,
+                            style: TextStyle(
+                              fontSize: 14,
+                              height: 1.5,
+                              color: Colors.grey[800],
                             ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Sumber: https://bukuende.wordpress.com/',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[500],
+                              fontStyle: FontStyle.normal,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Copyrighted by Yayasan Lentera Bangsa',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.grey[500],
+                              fontStyle: FontStyle.normal,
+                            ),
+                          ),
+                        ],
                       );
                     },
                   ),
@@ -2161,6 +2214,15 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                             'Sumber: https://alkitab.mobi/kidung/kj/',
                             style: TextStyle(
                               fontSize: 10,
+                              color: Colors.grey[500],
+                              fontStyle: FontStyle.normal,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Copyrighted by Yayasan Lentera Bangsa',
+                            style: TextStyle(
+                              fontSize: 9,
                               color: Colors.grey[500],
                               fontStyle: FontStyle.normal,
                             ),

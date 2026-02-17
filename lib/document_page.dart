@@ -61,72 +61,70 @@ class DocumentPage extends StatelessWidget {
         bool hasPermission = false;
         bool isAndroid11Plus = await _isAndroid11OrAbove();
         
+        debugPrint('=== PERMISSION CHECK ===');
+        debugPrint('Android Version: ${isAndroid11Plus ? "11+" : "10 ke bawah"}');
+        
+        // UNTUK SEMUA VERSI ANDROID: SELALU REQUEST PERMISSION TERLEBIH DAHULU
+        debugPrint('Requesting storage permission...');
+        var storageStatus = await Permission.storage.request();
+        debugPrint('Storage permission status: ${storageStatus.toString()}');
+        debugPrint('Is granted: ${storageStatus.isGranted}');
+        debugPrint('Is denied: ${storageStatus.isDenied}');
+        debugPrint('Is permanently denied: ${storageStatus.isPermanentlyDenied}');
+        
         if (isAndroid11Plus) {
-          // Android 11+ (API 30+): Scoped Storage - bisa download ke Download folder tanpa permission khusus
-          // Tapi tetap request permission untuk kompatibilitas dengan beberapa device
-          var storageStatus = await Permission.storage.status;
-          
-          if (storageStatus.isDenied) {
-            // Request permission jika belum pernah diminta
-            storageStatus = await Permission.storage.request();
-          }
-          
-          // Untuk Android 11+, coba juga manageExternalStorage jika storage ditolak
-          if (!storageStatus.isGranted) {
-            var manageStatus = await Permission.manageExternalStorage.status;
-            if (manageStatus.isDenied) {
-              manageStatus = await Permission.manageExternalStorage.request();
-            }
-            hasPermission = manageStatus.isGranted || storageStatus.isGranted;
-          } else {
+          // Android 11+ (API 30+): Scoped Storage
+          // Untuk Android 11+, kita bisa download ke Download folder tanpa permission khusus
+          // Tapi tetap cek apakah permission granted untuk kompatibilitas
+          if (storageStatus.isGranted) {
             hasPermission = true;
-          }
-          
-          // Jika permission ditolak, tampilkan dialog dan minta buka pengaturan
-          if (!hasPermission) {
-            if (context.mounted) {
-              final result = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Izin Storage Diperlukan'),
-                  content: const Text('Aplikasi memerlukan izin storage untuk menyimpan file. Silakan aktifkan izin di Pengaturan.'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Batal'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Buka Pengaturan'),
-                    ),
-                  ],
-                ),
-              );
-              if (result == true && context.mounted) {
-                await openAppSettings();
-              }
+            debugPrint('Android 11+: Storage permission granted');
+          } else {
+            // Coba request manageExternalStorage sebagai fallback
+            debugPrint('Android 11+: Storage denied, trying manageExternalStorage...');
+            var manageStatus = await Permission.manageExternalStorage.request();
+            debugPrint('ManageExternalStorage status: ${manageStatus.toString()}');
+            hasPermission = manageStatus.isGranted;
+            
+            // Untuk Android 11+, tetap lanjutkan download meskipun permission ditolak
+            // karena scoped storage memungkinkan akses ke Download folder tanpa permission
+            if (!hasPermission) {
+              debugPrint('Android 11+: All permissions denied, but continuing download (scoped storage allows)');
+              hasPermission = true; // Android 11+ bisa download tanpa permission
             }
-            return; // Stop download jika permission tidak diberikan
           }
         } else {
           // Android 10 ke bawah (API < 30): Wajib pakai storage permission
-          var storageStatus = await Permission.storage.status;
-          
-          if (storageStatus.isDenied) {
-            // Request permission
-            storageStatus = await Permission.storage.request();
-          }
-          
           hasPermission = storageStatus.isGranted;
+          debugPrint('Android 10-: Storage permission granted: $hasPermission');
           
-          // Jika permission ditolak, tampilkan dialog dan minta buka pengaturan
+          // Jika permission ditolak atau permanently denied
           if (!hasPermission) {
+            debugPrint('Android 10-: Permission denied, showing dialog...');
             if (context.mounted) {
+              final isPermanentlyDenied = storageStatus.isPermanentlyDenied;
+              
+              // Tampilkan SnackBar error dulu
+              _showSnackBar(
+                context, 
+                isPermanentlyDenied
+                    ? 'Izin storage ditolak. Silakan aktifkan izin di Pengaturan aplikasi.'
+                    : 'Izin storage diperlukan untuk mengunduh file.',
+                Colors.red,
+              );
+              
+              // Tunggu sebentar agar user bisa lihat SnackBar
+              await Future.delayed(const Duration(milliseconds: 500));
+              
               final result = await showDialog<bool>(
                 context: context,
                 builder: (context) => AlertDialog(
                   title: const Text('Izin Storage Diperlukan'),
-                  content: const Text('Aplikasi memerlukan izin storage untuk menyimpan file. Silakan aktifkan izin di Pengaturan.'),
+                  content: Text(
+                    isPermanentlyDenied
+                        ? 'Izin storage telah ditolak secara permanen. Silakan aktifkan izin storage di Pengaturan aplikasi untuk dapat mengunduh file.\n\nCara:\n1. Klik "Buka Pengaturan"\n2. Cari "Izin" atau "Permissions"\n3. Aktifkan "Storage" atau "Penyimpanan"'
+                        : 'Aplikasi memerlukan izin storage untuk menyimpan file. Silakan berikan izin saat diminta.',
+                  ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context, false),
@@ -143,41 +141,86 @@ class DocumentPage extends StatelessWidget {
                 await openAppSettings();
               }
             }
+            debugPrint('Android 10-: Stopping download due to permission denial');
             return; // Stop download jika permission tidak diberikan
           }
         }
+        debugPrint('=== PERMISSION CHECK END: hasPermission=$hasPermission ===');
       }
 
       // 3. TENTUKAN LOKASI PENYIMPANAN (Folder Download)
       Directory? directory;
       if (Platform.isAndroid) {
-        // Untuk Android 11+, gunakan getExternalStorageDirectory() yang lebih aman
-        // atau coba akses Download folder langsung
-        try {
-          // Coba akses Download folder langsung
-          directory = Directory('/storage/emulated/0/Download');
-          if (!await directory.exists()) {
-            // Fallback ke external storage directory
-            directory = await getExternalStorageDirectory();
-            if (directory != null) {
-              // Buat subfolder Download jika belum ada
-              directory = Directory('${directory.path}/Download');
-              if (!await directory.exists()) {
-                await directory.create(recursive: true);
+        bool isAndroid11Plus = await _isAndroid11OrAbove();
+        
+        if (isAndroid11Plus) {
+          // Android 11+: Gunakan getExternalStoragePublicDirectory untuk Download folder
+          // Ini tidak memerlukan permission khusus
+          try {
+            // Coba gunakan path Download yang umum
+            final downloadDir = Directory('/storage/emulated/0/Download');
+            if (await downloadDir.exists()) {
+              directory = downloadDir;
+            } else {
+              // Fallback: gunakan external storage directory
+              directory = await getExternalStorageDirectory();
+              if (directory != null) {
+                // Coba akses Download folder di external storage
+                final downloadPath = '${directory.path}/Download';
+                directory = Directory(downloadPath);
+                if (!await directory.exists()) {
+                  try {
+                    await directory.create(recursive: true);
+                  } catch (e) {
+                    // Jika tidak bisa create, gunakan external storage directory langsung
+                    directory = await getExternalStorageDirectory();
+                  }
+                }
               }
             }
+          } catch (e) {
+            // Jika semua gagal, gunakan external storage directory
+            directory = await getExternalStorageDirectory();
           }
-        } catch (e) {
-          // Jika gagal, gunakan external storage directory
-          directory = await getExternalStorageDirectory();
+        } else {
+          // Android 10 ke bawah: perlu permission, gunakan path biasa
+          try {
+            directory = Directory('/storage/emulated/0/Download');
+            if (!await directory.exists()) {
+              directory = await getExternalStorageDirectory();
+              if (directory != null) {
+                directory = Directory('${directory.path}/Download');
+                if (!await directory.exists()) {
+                  await directory.create(recursive: true);
+                }
+              }
+            }
+          } catch (e) {
+            directory = await getExternalStorageDirectory();
+          }
         }
       } else {
         directory = await getApplicationDocumentsDirectory();
       }
 
+      if (directory == null) {
+        throw Exception('Tidak dapat mengakses folder penyimpanan. Periksa izin aplikasi.');
+      }
+
+      // Pastikan directory bisa diakses
+      if (!await directory.exists()) {
+        try {
+          await directory.create(recursive: true);
+        } catch (e) {
+          throw Exception('Tidak dapat membuat folder Download. Periksa izin storage.');
+        }
+      }
+
       // Bersihkan nama file dari karakter ilegal
       String safeFileName = fileName.replaceAll(RegExp(r'[^\w\s]+'), '_');
-      String savePath = "${directory!.path}/$safeFileName.pdf";
+      String savePath = "${directory.path}/$safeFileName.pdf";
+      
+      debugPrint('Download path: $savePath');
 
       // 4. TAMPILKAN LOADING DIALOG
       if (!context.mounted) return;
@@ -199,7 +242,61 @@ class DocumentPage extends StatelessWidget {
       if (context.mounted) {
         if (Navigator.canPop(context)) Navigator.pop(context);
         ErrorHandler.logError(e);
-        _showSnackBar(context, ErrorHandler.getUserFriendlyMessage(e), Colors.red);
+        
+        // Error handling yang lebih spesifik untuk download
+        String errorMessage;
+        final errorString = e.toString().toLowerCase();
+        
+        if (errorString.contains('permission') || errorString.contains('denied') || errorString.contains('access')) {
+          // Cek apakah ini benar-benar permission error atau directory access error
+          if (errorString.contains('directory') || errorString.contains('path') || errorString.contains('storage')) {
+            errorMessage = 'Tidak dapat mengakses folder Download. Silakan aktifkan izin storage di Pengaturan aplikasi.';
+          } else {
+            errorMessage = 'Izin storage diperlukan. Silakan aktifkan izin di Pengaturan aplikasi.';
+          }
+        } else if (errorString.contains('directory') || errorString.contains('path')) {
+          errorMessage = 'Tidak dapat mengakses folder Download. Periksa izin storage.';
+        } else if (errorString.contains('network') || errorString.contains('connection') || errorString.contains('timeout')) {
+          errorMessage = 'Gagal mengunduh. Periksa koneksi internet Anda.';
+        } else if (errorString.contains('404') || errorString.contains('not found')) {
+          errorMessage = 'File tidak ditemukan di server.';
+        } else if (errorString.contains('403') || errorString.contains('forbidden')) {
+          errorMessage = 'Akses file ditolak.';
+        } else {
+          errorMessage = ErrorHandler.getUserFriendlyMessage(e);
+        }
+        
+        _showSnackBar(context, errorMessage, Colors.red);
+        
+        // Jika error terkait permission, tampilkan dialog juga
+        if (errorString.contains('permission') || errorString.contains('denied') || 
+            errorString.contains('directory') || errorString.contains('storage')) {
+          await Future.delayed(const Duration(milliseconds: 500));
+          if (context.mounted) {
+            final result = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Izin Storage Diperlukan'),
+                content: const Text(
+                  'Aplikasi memerlukan izin storage untuk menyimpan file ke folder Download.\n\nSilakan:\n1. Klik "Buka Pengaturan"\n2. Cari "Izin" atau "Permissions"\n3. Aktifkan "Storage" atau "Penyimpanan"\n4. Kembali ke aplikasi dan coba download lagi',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Batal'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Buka Pengaturan'),
+                  ),
+                ],
+              ),
+            );
+            if (result == true && context.mounted) {
+              await openAppSettings();
+            }
+          }
+        }
       }
     }
   }
@@ -215,11 +312,15 @@ class DocumentPage extends StatelessWidget {
   Future<bool> _isAndroid11OrAbove() async {
     if (!Platform.isAndroid) return false;
     // Android 11 = API 30
-    // Kita asumsikan jika manageExternalStorage tersedia, berarti Android 11+
+    // Cek Android version dengan mencoba akses manageExternalStorage
+    // Permission ini hanya tersedia di Android 11+ (API 30+)
     try {
+      // Cek apakah manageExternalStorage permission tersedia (hanya Android 11+)
       await Permission.manageExternalStorage.status;
-      return true; // Jika permission ini ada, berarti Android 11+
+      // Jika bisa akses status tanpa error, berarti Android 11+
+      return true;
     } catch (e) {
+      // Jika error, berarti Android 10 ke bawah
       return false;
     }
   }
