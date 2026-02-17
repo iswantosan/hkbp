@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:hkbp/profile_page.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'home_screen.dart';
 import 'register_page.dart';
 import 'config/api_config.dart';
 import 'utils/error_handler.dart';
 import 'services/auth_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -34,11 +34,33 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
 
     try {
+      // Get FCM token
+      String? fcmToken;
+      try {
+        fcmToken = await FirebaseMessaging.instance.getToken();
+        debugPrint('FCM Token: $fcmToken');
+      } catch (e) {
+        debugPrint('Error getting FCM token: $e');
+        // Continue login even if FCM token fails
+      }
+
       var url = Uri.parse("${ApiConfig.baseUrl}/login.php?api_key=${ApiConfig.apiKey}");
+      
+      // Prepare request body with FCM token
+      Map<String, dynamic> requestBody = {
+        "userid": userid,
+        "pass": pass,
+      };
+      
+      // Add FCM token if available
+      if (fcmToken != null && fcmToken.isNotEmpty) {
+        requestBody["fcm_token"] = fcmToken;
+      }
+      
       var response = await http.post(
         url,
         headers: {'Content-Type': 'application/json; charset=UTF-8'},
-        body: jsonEncode({"userid": userid, "pass": pass}),
+        body: jsonEncode(requestBody),
       ).timeout(const Duration(seconds: 20));
 
       var data = jsonDecode(response.body);

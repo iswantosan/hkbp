@@ -30,7 +30,35 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
   bool isPersembahanLoading = false;
   bool isDiakoniaLoading = false;
   int selectedYear = DateTime.now().year;
-  final List<int> yearList = [2026, 2025, 2024, 2023, 2022, 2021, 2020];
+
+  // Fungsi untuk memilih tahun menggunakan YearPicker
+  Future<void> _selectYear(BuildContext context) async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Pilih Tahun"),
+          content: SizedBox(
+            width: 300,
+            height: 300,
+            child: YearPicker(
+              firstDate: DateTime(2020),
+              lastDate: DateTime(2050),
+              initialDate: DateTime(selectedYear),
+              selectedDate: DateTime(selectedYear),
+              onChanged: (DateTime dateTime) {
+                setState(() {
+                  selectedYear = dateTime.year;
+                });
+                Navigator.pop(context);
+                _loadPersembahanDanDiakonia();
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   // Peta untuk label khusus yang disesuaikan dengan daftar kolom Anda
   static const Map<String, String> _specialLabels = {
@@ -363,30 +391,10 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
                     "Filter Tahun",
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.blue[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue.shade200),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        value: selectedYear,
-                        onChanged: (int? newValue) {
-                          if (newValue != null) {
-                            setState(() => selectedYear = newValue);
-                            _loadPersembahanDanDiakonia();
-                          }
-                        },
-                        items: yearList.map<DropdownMenuItem<int>>((v) => DropdownMenuItem<int>(
-                          value: v,
-                          child: Text("Tahun $v", style: const TextStyle(fontSize: 13)),
-                        )).toList(),
-                        icon: Icon(Icons.arrow_drop_down, color: Colors.blue[700]),
-                        style: TextStyle(color: Colors.blue[900], fontWeight: FontWeight.w500),
-                      ),
-                    ),
+                  ActionChip(
+                    avatar: const Icon(Icons.calendar_today, size: 16),
+                    label: Text("$selectedYear"),
+                    onPressed: () => _selectYear(context),
                   ),
                 ],
               ),

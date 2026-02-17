@@ -21,8 +21,33 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
   List<dynamic> annualTotals = [];
   bool isLoading = true;
 
-  // Data statis untuk filter tahun
-  final List<int> yearList = [2026, 2025, 2024, 2023];
+  // Fungsi untuk memilih tahun menggunakan YearPicker
+  Future<void> _selectYear(BuildContext context) async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Pilih Tahun"),
+          content: SizedBox(
+            width: 300,
+            height: 300,
+            child: YearPicker(
+              firstDate: DateTime(2020),
+              lastDate: DateTime(2050),
+              initialDate: DateTime(selectedYear),
+              selectedDate: DateTime(selectedYear),
+              onChanged: (DateTime dateTime) {
+                setState(() {
+                  selectedYear = dateTime.year;
+                });
+                Navigator.pop(context);
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   // Menggunakan Map untuk menghubungkan angka bulan dengan namanya
   final Map<int, String> monthNames = {
@@ -219,22 +244,10 @@ class _FinancialReportPageState extends State<FinancialReportPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text("Laporan Bulanan", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        value: selectedYear,
-                        onChanged: (int? newValue) {
-                          if (newValue != null) setState(() => selectedYear = newValue);
-                        },
-                        items: yearList.map<DropdownMenuItem<int>>((v) => DropdownMenuItem<int>(value: v, child: Text("Tahun $v"))).toList(),
-                      ),
-                    ),
+                  ActionChip(
+                    avatar: const Icon(Icons.calendar_today, size: 16),
+                    label: Text("$selectedYear"),
+                    onPressed: () => _selectYear(context),
                   ),
                 ],
               ),

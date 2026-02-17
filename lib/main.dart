@@ -1,18 +1,41 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 import 'http_overrides.dart';
 import 'home_screen.dart';
+import 'firebase_messaging_handler.dart';
 
 // Fungsi utama yang dijalankan saat aplikasi dimulai
 Future<void> main() async {
   // Pastikan semua binding Flutter siap
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Inisialisasi Firebase
+  try {
+    await Firebase.initializeApp();
+    debugPrint('Firebase initialized successfully');
+  } catch (e) {
+    debugPrint('Error initializing Firebase: $e');
+  }
+
+  // Setup Crashlytics
+  FlutterError.onError = (errorDetails) {
+    FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
+  };
+  
+  // Pass all uncaught asynchronous errors that aren't handled by the Flutter framework to Crashlytics
+  PlatformDispatcher.instance.onError = (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    return true;
+  };
 
   // Muat file .env untuk konfigurasi
   try {
@@ -23,6 +46,9 @@ Future<void> main() async {
 
   // Izinkan sertifikat SSL (HANYA UNTUK DEVELOPMENT)
   HttpOverrides.global = MyHttpOverrides();
+
+  // Setup FCM
+  await setupFCM();
 
   // Inisialisasi format tanggal lokal dan jalankan aplikasi
   initializeDateFormatting('id_ID', null).then((_) {

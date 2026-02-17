@@ -436,27 +436,27 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
         // Cari elemen <p> yang mengandung "Toba:"
         // Format: <p><strong><a href="..."><span class="reftext">Toba:</span></a></strong> (I.) Di mula ni mulana ditompa Debata langit dohot tano on.</p>
         final paragraphs = document.querySelectorAll('p');
-        
+          
         for (final p in paragraphs) {
           final text = p.text.trim();
-          
+              
           // Cek apakah paragraf ini mengandung "Toba:"
           if (text.contains('Toba:') || p.querySelector('span.reftext') != null) {
             // Ambil semua teks setelah "Toba:"
             // Hapus "Toba:" dan ambil sisa teks
             String batakText = text;
-            
+                
             // Hapus "Toba:" dari awal
             batakText = batakText.replaceFirst(RegExp(r'^Toba:\s*'), '');
             
             // Jika masih ada prefix seperti "(I.)" di awal, hapus juga
             batakText = batakText.replaceFirst(RegExp(r'^\([^)]+\)\s*'), '');
             
-            batakText = batakText.trim();
-            
-            if (batakText.isNotEmpty && batakText.length > 5) {
-              return _cleanText(batakText);
-            }
+                batakText = batakText.trim();
+                
+                if (batakText.isNotEmpty && batakText.length > 5) {
+                  return _cleanText(batakText);
+                }
           }
         }
         
@@ -473,8 +473,8 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
               batakText = batakText.trim();
               
               if (batakText.isNotEmpty && batakText.length > 5) {
-                return _cleanText(batakText);
-              }
+            return _cleanText(batakText);
+          }
               break;
             }
             current = current.parent;
@@ -1179,25 +1179,25 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
           } else {
             print('Tidak ada <li>, coba ambil dari <p>');
             // Fallback: jika tidak ada <li>, ambil dari paragraf
-            final paragraphs = content.querySelectorAll('p');
+          final paragraphs = content.querySelectorAll('p');
             print('Jumlah <p> ditemukan: ${paragraphs.length}');
             
             for (int i = 0; i < paragraphs.length; i++) {
               final p = paragraphs[i];
-              final text = p.text.trim();
+            final text = p.text.trim();
               print('P[$i]: ${text.substring(0, text.length > 50 ? 50 : text.length)}...');
               
-              if (text.isNotEmpty && 
-                  !text.toLowerCase().contains('bagikan') &&
-                  !text.toLowerCase().contains('suka') &&
-                  !text.toLowerCase().contains('komentar') &&
-                  !text.toLowerCase().contains('facebook') &&
-                  !text.toLowerCase().contains('twitter') &&
-                  !text.toLowerCase().contains('whatsapp') &&
-                  !text.toLowerCase().contains('share') &&
-                  !text.toLowerCase().contains('tweet') &&
-                  !text.toLowerCase().contains('like') &&
-                  !text.toLowerCase().contains('follow') &&
+            if (text.isNotEmpty && 
+                !text.toLowerCase().contains('bagikan') &&
+                !text.toLowerCase().contains('suka') &&
+                !text.toLowerCase().contains('komentar') &&
+                !text.toLowerCase().contains('facebook') &&
+                !text.toLowerCase().contains('twitter') &&
+                !text.toLowerCase().contains('whatsapp') &&
+                !text.toLowerCase().contains('share') &&
+                !text.toLowerCase().contains('tweet') &&
+                !text.toLowerCase().contains('like') &&
+                !text.toLowerCase().contains('follow') &&
                   text.length > 3) {
                 final normalizedText = text.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
                 if (normalizedText.isNotEmpty) {
@@ -1441,14 +1441,14 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                       String cleanedText = lyricsText
                           .replaceAll(RegExp(r'\n{3,}'), '\n\n')
                           .trim();
-                      
+                          
                       return Text(
                         cleanedText,
-                        style: TextStyle(
-                          fontSize: 14,
+                              style: TextStyle(
+                                fontSize: 14,
                           height: 1.5,
-                          color: Colors.grey[800],
-                        ),
+                                color: Colors.grey[800],
+                            ),
                       );
                     },
                   ),
