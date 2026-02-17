@@ -86,7 +86,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
         {'code': 'Num', 'name': 'Bilangan'},
         {'code': 'Deu', 'name': 'Ulangan'},
         {'code': 'Jos', 'name': 'Yosua'},
-        {'code': 'Jud', 'name': 'Hakim-hakim'},
+        {'code': 'Hak', 'name': 'Hakim-hakim'},
         {'code': 'Rut', 'name': 'Rut'},
         {'code': '1Sa', 'name': '1 Samuel'},
         {'code': '2Sa', 'name': '2 Samuel'},
