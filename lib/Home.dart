@@ -149,11 +149,27 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
         {'code': '1Jo', 'name': '1 Yohanes'},
         {'code': '2Jo', 'name': '2 Yohanes'},
         {'code': '3Jo', 'name': '3 Yohanes'},
-        {'code': 'Jud', 'name': 'Yudas'},
+        {'code': 'Jude', 'name': 'Yudas'},
         {'code': 'Rev', 'name': 'Wahyu'},
       ]
     }
   ];
+
+  /// Helper method untuk mendapatkan semua valid book codes
+  Set<String> _getValidBookCodes() {
+    return bibleBooks
+        .expand((category) => category['items'] as List)
+        .map((item) => item['code'] as String)
+        .toSet();
+  }
+
+  /// Validasi dan perbaiki selectedBook jika tidak valid
+  void _validateSelectedBook() {
+    final validCodes = _getValidBookCodes();
+    if (!validCodes.contains(selectedBook)) {
+      selectedBook = 'Mat'; // Reset ke default jika tidak valid
+    }
+  }
 
   @override
   void initState() {
@@ -163,6 +179,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
     _startCtrl = TextEditingController(text: startVerse);
     _endCtrl = TextEditingController(text: endVerse);
     _searchController.addListener(_onSearchChanged);
+    _validateSelectedBook(); // Validasi sebelum fetch data
     _fetchData();
     _fetchBukuEndeList();
   }
@@ -207,7 +224,9 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
       'Ima': 'Lev',
       'Bil': 'Num',
       'Ula': 'Deu',
-      // Tambahkan mapping lain jika diperlukan
+      // Fix: API mungkin mengembalikan "Jude" untuk "Hakim-hakim" (seharusnya "Jud")
+      // Tapi kita tidak bisa langsung mapping "Jude" ke "Jud" karena "Jude" adalah kode untuk "Yudas"
+      // Jadi kita perlu konteks tambahan atau validasi lebih lanjut
     };
     
     // Cek apakah ada mapping alternatif
@@ -504,11 +523,32 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
     try {
       // Gunakan verse.bookName langsung karena lebih reliable daripada mapping dari bookAbbr
       // API mungkin mengembalikan bookAbbr yang berbeda (misal: "Kej" vs "Gen")
-      final bookName = verse.bookName.isNotEmpty ? verse.bookName : _getBookNameForAPI(verse.bookAbbr);
+      // Fix: Validasi bookName untuk memastikan tidak ada kesalahan mapping antara "Jud" (Hakim-hakim) dan "Jude" (Yudas)
+      String bookName = verse.bookName.isNotEmpty ? verse.bookName : _getBookNameForAPI(verse.bookAbbr);
+      
+      // Validasi: Jika selectedBook adalah "Jud" (Hakim-hakim) tapi API mengembalikan bookAbbr "Jude" (Yudas)
+      // atau bookName "Yudas", berarti API salah. Perbaiki dengan menggunakan selectedBook.
+      if (selectedBook == 'Jud') {
+        // User memilih Hakim-hakim, jadi pastikan bookName adalah "Hakim-hakim"
+        if (bookName == 'Yudas' || verse.bookAbbr == 'Jude') {
+          bookName = 'Hakim-hakim';
+          debugPrint('Fix: API mengembalikan bookAbbr "${verse.bookAbbr}" atau bookName "$bookName" untuk "Hakim-hakim", diperbaiki ke "Hakim-hakim"');
+        }
+      }
+      // Validasi sebaliknya: Jika selectedBook adalah "Jude" (Yudas) tapi API mengembalikan bookAbbr "Jud" (Hakim-hakim)
+      // atau bookName "Hakim-hakim", berarti API salah. Perbaiki dengan menggunakan selectedBook.
+      else if (selectedBook == 'Jude') {
+        // User memilih Yudas, jadi pastikan bookName adalah "Yudas"
+        if (bookName == 'Hakim-hakim' || verse.bookAbbr == 'Jud') {
+          bookName = 'Yudas';
+          debugPrint('Fix: API mengembalikan bookAbbr "${verse.bookAbbr}" atau bookName "$bookName" untuk "Yudas", diperbaiki ke "Yudas"');
+        }
+      }
+      
       final chapter = verse.chapter;
       final verseNum = verse.verse;
       
-      debugPrint('Fetch Batak - verse.bookAbbr: ${verse.bookAbbr}, verse.bookName: ${verse.bookName}, final bookName: $bookName, chapter: $chapter, verse: $verseNum');
+      debugPrint('Fetch Batak - verse.bookAbbr: ${verse.bookAbbr}, verse.bookName: ${verse.bookName}, selectedBook: $selectedBook, final bookName: $bookName, chapter: $chapter, verse: $verseNum');
       
       // Scrape dari WordPress
       final batakText = await _scrapeBatakVerse(bookName, chapter, verseNum);
@@ -536,6 +576,32 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
     }
   }
 
+  /// Helper untuk memperbaiki bookName dan bookAbbr berdasarkan selectedBook
+  /// Fix: API mungkin salah mengembalikan "Jude" (Yudas) untuk "Jud" (Hakim-hakim)
+  Map<String, String> _fixBookInfo(String apiBookName, String apiBookAbbr) {
+    String fixedBookName = apiBookName;
+    String fixedBookAbbr = apiBookAbbr;
+    
+    // Jika selectedBook adalah "Jud" (Hakim-hakim) tapi API mengembalikan "Jude" atau "Yudas"
+    if (selectedBook == 'Jud') {
+      if (apiBookAbbr == 'Jude' || apiBookName == 'Yudas') {
+        fixedBookName = 'Hakim-hakim';
+        fixedBookAbbr = 'Jud';
+        debugPrint('Fix API response: bookName "$apiBookName" ($apiBookAbbr) -> "Hakim-hakim" (Jud)');
+      }
+    }
+    // Jika selectedBook adalah "Jude" (Yudas) tapi API mengembalikan "Jud" atau "Hakim-hakim"
+    else if (selectedBook == 'Jude') {
+      if (apiBookAbbr == 'Jud' || apiBookName == 'Hakim-hakim') {
+        fixedBookName = 'Yudas';
+        fixedBookAbbr = 'Jude';
+        debugPrint('Fix API response: bookName "$apiBookName" ($apiBookAbbr) -> "Yudas" (Jude)');
+      }
+    }
+    
+    return {'bookName': fixedBookName, 'bookAbbr': fixedBookAbbr};
+  }
+
   List<Verse> _parsePassageResponse(dynamic decoded) {
     final result = <Verse>[];
     if (decoded is List) {
@@ -547,8 +613,14 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
           if (bookEntry is! Map<String, dynamic>) continue;
           final info = bookEntry['info'] as Map<String, dynamic>? ?? {};
           final data = bookEntry['data'] as Map<String, dynamic>? ?? {};
-          final bookName = info['book_name']?.toString() ?? '';
-          final bookAbbr = info['book_abbr']?.toString() ?? '';
+          final apiBookName = info['book_name']?.toString() ?? '';
+          final apiBookAbbr = info['book_abbr']?.toString() ?? '';
+          
+          // Fix bookName dan bookAbbr jika API salah mengembalikan data
+          final fixed = _fixBookInfo(apiBookName, apiBookAbbr);
+          final bookName = fixed['bookName']!;
+          final bookAbbr = fixed['bookAbbr']!;
+          
           for (final chapterEntry in data.entries) {
             final chapterNum = int.tryParse(chapterEntry.key.toString()) ?? 0;
             final versesMap = chapterEntry.value;
@@ -576,8 +648,14 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
         if (v is! Map<String, dynamic>) continue;
         final info = v['info'] as Map<String, dynamic>? ?? {};
         final ayt = (v['data'] as Map?)?['ayt'] as Map<String, dynamic>? ?? {};
-        final bookName = info['book_name']?.toString() ?? '';
-        final bookAbbr = info['book_abbr']?.toString() ?? '';
+        final apiBookName = info['book_name']?.toString() ?? '';
+        final apiBookAbbr = info['book_abbr']?.toString() ?? '';
+        
+        // Fix bookName dan bookAbbr jika API salah mengembalikan data
+        final fixed = _fixBookInfo(apiBookName, apiBookAbbr);
+        final bookName = fixed['bookName']!;
+        final bookAbbr = fixed['bookAbbr']!;
+        
         final chapterNum = int.tryParse(info['chapter']?.toString() ?? '') ?? 0;
         final verseNum = int.tryParse(info['verse']?.toString() ?? '') ?? 0;
         final text = ayt['text']?.toString() ?? '';
@@ -757,7 +835,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                             ),
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<String>(
-                                value: selectedBook,
+                                value: _getValidBookCodes().contains(selectedBook) ? selectedBook : 'Mat',
                                 isExpanded: true,
                                 items: bibleBooks.expand((category) {
                                   return [
