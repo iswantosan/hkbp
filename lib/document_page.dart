@@ -63,7 +63,7 @@ class DocumentPage extends StatelessWidget {
         
         if (isAndroid11Plus) {
           // Android 11+ (API 30+): Scoped Storage - bisa download ke Download folder tanpa permission khusus
-          // Tapi tetap coba request permission untuk kompatibilitas dengan beberapa device
+          // Tapi tetap request permission untuk kompatibilitas dengan beberapa device
           var storageStatus = await Permission.storage.status;
           
           if (storageStatus.isDenied) {
@@ -71,14 +71,42 @@ class DocumentPage extends StatelessWidget {
             storageStatus = await Permission.storage.request();
           }
           
-          // Android 11+ bisa download tanpa permission, jadi kita lanjutkan
-          hasPermission = true; // Android 11+ tidak memerlukan permission untuk download
-          
-          // Jika permission ditolak permanen, tampilkan info (tapi tetap lanjutkan download)
-          if (storageStatus.isPermanentlyDenied) {
-            if (context.mounted) {
-              _showSnackBar(context, "Izin storage ditolak, tetapi download tetap akan dicoba...", Colors.orange);
+          // Untuk Android 11+, coba juga manageExternalStorage jika storage ditolak
+          if (!storageStatus.isGranted) {
+            var manageStatus = await Permission.manageExternalStorage.status;
+            if (manageStatus.isDenied) {
+              manageStatus = await Permission.manageExternalStorage.request();
             }
+            hasPermission = manageStatus.isGranted || storageStatus.isGranted;
+          } else {
+            hasPermission = true;
+          }
+          
+          // Jika permission ditolak, tampilkan dialog dan minta buka pengaturan
+          if (!hasPermission) {
+            if (context.mounted) {
+              final result = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Izin Storage Diperlukan'),
+                  content: const Text('Aplikasi memerlukan izin storage untuk menyimpan file. Silakan aktifkan izin di Pengaturan.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Batal'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Buka Pengaturan'),
+                    ),
+                  ],
+                ),
+              );
+              if (result == true && context.mounted) {
+                await openAppSettings();
+              }
+            }
+            return; // Stop download jika permission tidak diberikan
           }
         } else {
           // Android 10 ke bawah (API < 30): Wajib pakai storage permission
