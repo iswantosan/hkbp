@@ -38,6 +38,21 @@ class BukuEnde {
   });
 }
 
+/// Model untuk Kidung Jemaat
+class KidungJemaat {
+  final String title;
+  final int nomor;
+  final String url;
+  final String? lyrics; // Teks lagu (akan di-scrape saat dibuka)
+
+  const KidungJemaat({
+    required this.title,
+    required this.nomor,
+    required this.url,
+    this.lyrics,
+  });
+}
+
 class Home extends StatefulWidget {
   const Home({super.key});
 
@@ -63,6 +78,15 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   Map<String, String> _bukuEndeLyrics = {}; // Key: URL, Value: lyrics
   Map<String, bool> _loadingLyrics = {}; // Key: URL, Value: loading state
+
+  /// State untuk Kidung Jemaat
+  List<KidungJemaat> _kidungJemaatList = [];
+  List<KidungJemaat> _filteredKidungJemaatList = [];
+  bool _isLoadingKidungJemaat = false;
+  String? _kidungJemaatError;
+  final TextEditingController _searchKidungJemaatController = TextEditingController();
+  Map<String, String> _kidungJemaatLyrics = {}; // Key: URL, Value: lyrics
+  Map<String, bool> _loadingKidungJemaatLyrics = {}; // Key: URL, Value: loading state
 
   /// Variabel filter
   String selectedBook = 'Mat';
@@ -174,14 +198,16 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _chapterCtrl = TextEditingController(text: selectedChapter);
     _startCtrl = TextEditingController(text: startVerse);
     _endCtrl = TextEditingController(text: endVerse);
     _searchController.addListener(_onSearchChanged);
+    _searchKidungJemaatController.addListener(_onSearchKidungJemaatChanged);
     _validateSelectedBook(); // Validasi sebelum fetch data
     _fetchData();
     _fetchBukuEndeList();
+    _fetchKidungJemaatList();
   }
 
   @override
@@ -191,6 +217,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
     _startCtrl.dispose();
     _endCtrl.dispose();
     _searchController.dispose();
+    _searchKidungJemaatController.dispose();
     super.dispose();
   }
 
@@ -776,8 +803,9 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                   labelColor: Colors.white,
                   unselectedLabelColor: Colors.white70,
                   tabs: const [
-                    Tab(text: 'Alkitab Digital'),
-                    Tab(text: 'Buku Ende'),
+                    Tab(text: 'Alkitab'),
+                    Tab(text: 'B. Ende'),
+                    Tab(text: 'K. Jemaat'),
                   ],
                 ),
               ],
@@ -790,8 +818,10 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
               children: [
                 // Tab 1: Alkitab Digital
                 _buildAlkitabDigitalTab(),
-                // Tab 2: Buku Ende (kosong dulu)
+                // Tab 2: Buku Ende
                 _buildBukuEndeTab(),
+                // Tab 3: Kidung Jemaat
+                _buildKidungJemaatTab(),
               ],
             ),
           ),
@@ -934,6 +964,36 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
                         (context, index) {
+                      // Jika index adalah item terakhir, tampilkan copyright
+                      if (index == _verses.length) {
+                        return Container(
+                          margin: const EdgeInsets.only(top: 20, bottom: 20),
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            children: [
+                              Text(
+                                'Sumber data: https://api.ayt.co/',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[500],
+                                  fontStyle: FontStyle.normal,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Copyrighted Lembaga by Yayasan Lentera Bangsa (SABDA)',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
                       final v = _verses[index];
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
@@ -1083,6 +1143,15 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                                             fontStyle: FontStyle.normal,
                                           ),
                                         ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Copyrighted Lembaga by Yayasan Lentera Bangsa (SABDA)',
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            color: Colors.orange[600],
+                                            fontStyle: FontStyle.normal,
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   );
@@ -1095,12 +1164,464 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                         ),
                       );
                     },
-                    childCount: _verses.length,
+                    childCount: _verses.length + 1,
                   ),
                 ),
               ),
       ],
     );
+  }
+
+  Widget _buildKidungJemaatTab() {
+    return Column(
+      children: [
+        // Search Bar
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: Colors.white,
+          child: TextField(
+            controller: _searchKidungJemaatController,
+            decoration: InputDecoration(
+              hintText: 'Cari lagu Kidung Jemaat...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchKidungJemaatController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchKidungJemaatController.clear();
+                        _onSearchKidungJemaatChanged();
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              filled: true,
+              fillColor: Colors.grey[50],
+            ),
+          ),
+        ),
+        // Content
+        Expanded(
+          child: _isLoadingKidungJemaat
+              ? const Center(child: CircularProgressIndicator())
+              : _kidungJemaatError != null
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.error_outline, size: 60, color: Colors.grey[300]),
+                          const SizedBox(height: 16),
+                          Text(
+                            _kidungJemaatError!,
+                            style: const TextStyle(color: Colors.grey),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _fetchKidungJemaatList,
+                            child: const Text('Coba Lagi'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _filteredKidungJemaatList.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.search_off, size: 60, color: Colors.grey[300]),
+                              const SizedBox(height: 16),
+                              Text(
+                                _searchKidungJemaatController.text.isNotEmpty
+                                    ? 'Tidak ada hasil pencarian'
+                                    : 'Tidak ada data',
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _filteredKidungJemaatList.length + 1,
+                          itemBuilder: (context, index) {
+                            // Jika index adalah item terakhir, tampilkan copyright
+                            if (index == _filteredKidungJemaatList.length) {
+                              return Container(
+                                margin: const EdgeInsets.only(top: 20, bottom: 20),
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      'Sumber data: https://alkitab.mobi/kidung/kj/',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[500],
+                                        fontStyle: FontStyle.normal,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Copyrighted by Yayasan Lentera Bangsa',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            final lagu = _filteredKidungJemaatList[index];
+                            return _buildKidungJemaatItem(lagu);
+                          },
+                        ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildKidungJemaatItem(KidungJemaat lagu) {
+    final hasLyrics = _kidungJemaatLyrics.containsKey(lagu.url);
+    final isLoading = _loadingKidungJemaatLyrics[lagu.url] ?? false;
+    final lyrics = _kidungJemaatLyrics[lagu.url];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ExpansionTile(
+        leading: CircleAvatar(
+          backgroundColor: Colors.purple[100],
+          child: Text(
+            '${lagu.nomor}',
+            style: TextStyle(
+              color: Colors.purple[900],
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        title: Text(
+          lagu.title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+        ),
+        subtitle: Text(
+          'No. ${lagu.nomor}',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+        trailing: isLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(
+                hasLyrics ? Icons.expand_less : Icons.expand_more,
+                color: Colors.purple[700],
+              ),
+        onExpansionChanged: (expanded) {
+          if (expanded && !hasLyrics && !isLoading) {
+            _fetchKidungJemaatLyrics(lagu.url);
+          }
+        },
+        children: [
+          if (hasLyrics)
+            Container(
+              padding: const EdgeInsets.all(16),
+              width: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Builder(
+                    builder: (context) {
+                      final lyricsText = lyrics ?? 'Lirik tidak tersedia';
+                      if (lyricsText == 'Lirik tidak tersedia') {
+                        return Text(
+                          lyricsText,
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.6,
+                            color: Colors.grey[800],
+                          ),
+                        );
+                      }
+                      
+                      String cleanedText = lyricsText
+                          .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+                          .trim();
+                          
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            cleanedText,
+                            style: TextStyle(
+                              fontSize: 14,
+                              height: 1.5,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Sumber: https://alkitab.mobi/kidung/kj/',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[500],
+                              fontStyle: FontStyle.normal,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Copyrighted by Yayasan Lentera Bangsa',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.grey[500],
+                              fontStyle: FontStyle.normal,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            )
+          else if (isLoading)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Fetch daftar Kidung Jemaat dari alkitab.mobi
+  Future<void> _fetchKidungJemaatList() async {
+    setState(() {
+      _isLoadingKidungJemaat = true;
+      _kidungJemaatError = null;
+    });
+
+    try {
+      final url = 'https://alkitab.mobi/kidung/kj/';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      ).timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200) {
+        final document = html_parser.parse(response.body);
+        final List<KidungJemaat> kidungJemaatList = [];
+
+        // Cari semua link yang berisi format "KJ {nomor}" atau "KJ {nomor} - {judul}"
+        final links = document.querySelectorAll('a');
+        for (final link in links) {
+          final href = link.attributes['href'] ?? '';
+          final text = link.text.trim();
+          
+          // Format: "KJ 1" atau "KJ 1 - Haleluya, Pujilah" atau link ke /kidung/kj/{nomor}/
+          if (href.contains('/kidung/kj/') && 
+              text.isNotEmpty) {
+            
+            // Extract nomor dari href atau text
+            // Format href: /kidung/kj/1/ atau https://alkitab.mobi/kidung/kj/1/
+            final hrefMatch = RegExp(r'/kidung/kj/(\d+)/?').firstMatch(href);
+            final textMatch = RegExp(r'KJ\s*(\d+)').firstMatch(text);
+            
+            int? nomor;
+            if (hrefMatch != null) {
+              nomor = int.tryParse(hrefMatch.group(1) ?? '');
+            } else if (textMatch != null) {
+              nomor = int.tryParse(textMatch.group(1) ?? '');
+            }
+            
+            if (nomor != null && nomor > 0) {
+              // Extract judul dari text
+              // Format: "KJ 1 - Haleluya, Pujilah" atau "KJ 1"
+              String title = text;
+              if (text.contains(' - ')) {
+                title = text.split(' - ').skip(1).join(' - ').trim();
+              } else {
+                title = text.replaceAll(RegExp(r'KJ\s*\d+\s*'), '').trim();
+              }
+              
+              if (title.isEmpty) {
+                title = 'Kidung Jemaat No. $nomor';
+              }
+              
+              final fullUrl = href.startsWith('http') ? href : 'https://alkitab.mobi$href';
+              
+              // Cek apakah sudah ada (untuk menghindari duplikat)
+              if (!kidungJemaatList.any((k) => k.nomor == nomor)) {
+                kidungJemaatList.add(KidungJemaat(
+                  title: title,
+                  nomor: nomor,
+                  url: fullUrl,
+                ));
+              }
+            }
+          }
+        }
+
+        kidungJemaatList.sort((a, b) => a.nomor.compareTo(b.nomor));
+
+        setState(() {
+          _kidungJemaatList = kidungJemaatList;
+          _filteredKidungJemaatList = kidungJemaatList;
+          _isLoadingKidungJemaat = false;
+        });
+      } else {
+        setState(() {
+          _isLoadingKidungJemaat = false;
+          _kidungJemaatError = 'Gagal memuat daftar Kidung Jemaat';
+        });
+      }
+    } catch (e) {
+      ErrorHandler.logError(e);
+      if (mounted) {
+        setState(() {
+          _isLoadingKidungJemaat = false;
+          _kidungJemaatError = ErrorHandler.getUserFriendlyMessage(e);
+        });
+      }
+    }
+  }
+
+  /// Fetch detail lagu Kidung Jemaat
+  Future<void> _fetchKidungJemaatLyrics(String url) async {
+    if (_kidungJemaatLyrics.containsKey(url)) return;
+
+    setState(() {
+      _loadingKidungJemaatLyrics[url] = true;
+    });
+
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final document = html_parser.parse(response.body);
+        
+        // Cari konten utama - biasanya di dalam tag <p> atau <div>
+        String lyrics = '';
+        
+        // Cari semua paragraf yang berisi lirik
+        final paragraphs = document.querySelectorAll('p');
+        for (final p in paragraphs) {
+          final text = p.text.trim();
+          
+          // Skip jika berisi elemen non-lirik
+          if (text.isNotEmpty && 
+              !text.toLowerCase().contains('bagikan') &&
+              !text.toLowerCase().contains('suka') &&
+              !text.toLowerCase().contains('komentar') &&
+              !text.toLowerCase().contains('share') &&
+              !text.toLowerCase().contains('facebook') &&
+              !text.toLowerCase().contains('twitter') &&
+              !text.toLowerCase().contains('play') &&
+              !text.toLowerCase().contains('download') &&
+              !text.toLowerCase().contains('selengkapnya') &&
+              !text.toLowerCase().contains('bahan renungan') &&
+              !text.toLowerCase().contains('kamus') &&
+              !text.toLowerCase().contains('copyright') &&
+              !text.toLowerCase().contains('ylsa') &&
+              !text.toLowerCase().contains('sabda') &&
+              text.length > 3) {
+            
+            // Format: "Reff:" atau "_Reff:_" atau "_**1**_." atau "_1._"
+            // Bersihkan format italic/markdown
+            String cleanedText = text
+                .replaceAll(RegExp(r'^\*\*'), '')
+                .replaceAll(RegExp(r'\*\*$'), '')
+                .replaceAll(RegExp(r'^_'), '')
+                .replaceAll(RegExp(r'_$'), '')
+                .trim();
+            
+            if (cleanedText.isNotEmpty) {
+              if (lyrics.isNotEmpty) {
+                lyrics += '\n\n';
+              }
+              lyrics += cleanedText;
+            }
+          }
+        }
+
+        if (lyrics.isNotEmpty) {
+          // Bersihkan baris kosong berlebihan
+          lyrics = lyrics.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+          
+          setState(() {
+            _kidungJemaatLyrics[url] = lyrics;
+            _loadingKidungJemaatLyrics[url] = false;
+          });
+        } else {
+          setState(() {
+            _kidungJemaatLyrics[url] = 'Lirik tidak ditemukan';
+            _loadingKidungJemaatLyrics[url] = false;
+          });
+        }
+      } else {
+        setState(() {
+          _kidungJemaatLyrics[url] = 'Gagal memuat lirik';
+          _loadingKidungJemaatLyrics[url] = false;
+        });
+      }
+    } catch (e) {
+      ErrorHandler.logError(e);
+      if (mounted) {
+        setState(() {
+          _kidungJemaatLyrics[url] = ErrorHandler.getUserFriendlyMessage(e);
+          _loadingKidungJemaatLyrics[url] = false;
+        });
+      }
+    }
+  }
+
+  /// Filter daftar Kidung Jemaat berdasarkan search query
+  void _onSearchKidungJemaatChanged() {
+    final query = _searchKidungJemaatController.text.toLowerCase().trim();
+    
+    if (query.isEmpty) {
+      setState(() {
+        _filteredKidungJemaatList = _kidungJemaatList;
+      });
+    } else {
+      setState(() {
+        _filteredKidungJemaatList = _kidungJemaatList.where((lagu) {
+          return lagu.title.toLowerCase().contains(query) ||
+                 lagu.nomor.toString().contains(query);
+        }).toList();
+      });
+    }
   }
 
   /// Fetch daftar Buku Ende dari WordPress

@@ -1,8 +1,6 @@
 import 'dart:io';
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/services.dart';
 
 
 class DocumentPage extends StatelessWidget {
@@ -46,71 +44,95 @@ class DocumentPage extends StatelessWidget {
     },
   ];
 
-  // LOGIC DOWNLOAD LENGKAP
+  // LOGIC DOWNLOAD MENGGUNAKAN ANDROID DOWNLOAD MANAGER
   Future<void> _startDownload(BuildContext context, String url, String fileName) async {
-    // 1. Inisialisasi Dio dengan Timeout (Sesuai Dio 5.x)
-    Dio dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 20),
-      receiveTimeout: const Duration(seconds: 20),
-    ));
-
     try {
-      // 2. REQUEST IZIN STORAGE (LOGIC ANDROID 10-13+)
-      if (Platform.isAndroid) {
-        // Cek status izin storage
-        var status = await Permission.storage.status;
-        if (!status.isGranted) {
-          status = await Permission.storage.request();
-        }
-
-        // Jika masih gagal (Android 11+), minta izin Manage External Storage
-        if (!status.isGranted) {
-          var manageStatus = await Permission.manageExternalStorage.request();
-          if (!manageStatus.isGranted) {
-            if (context.mounted) {
-              _showSnackBar(context, "Izin ditolak. Aktifkan izin storage di Pengaturan.", Colors.red);
-            }
-            return;
-          }
-        }
-      }
-
-      // 3. TENTUKAN LOKASI PENYIMPANAN (Folder Download)
-      Directory? directory;
-      if (Platform.isAndroid) {
-        directory = Directory('/storage/emulated/0/Download');
-        if (!await directory.exists()) {
-          directory = await getExternalStorageDirectory();
-        }
-      } else {
-        directory = await getApplicationDocumentsDirectory();
-      }
-
       // Bersihkan nama file dari karakter ilegal
       String safeFileName = fileName.replaceAll(RegExp(r'[^\w\s]+'), '_');
-      String savePath = "${directory!.path}/$safeFileName.pdf";
+      String finalFileName = "$safeFileName.pdf";
 
-      // 4. TAMPILKAN LOADING DIALOG
-      if (!context.mounted) return;
-      _showLoadingDialog(context);
+      if (Platform.isAndroid) {
+        // Gunakan Android DownloadManager - lebih reliable dan tidak perlu permission khusus
+        const platform = MethodChannel('com.hkbp/download');
+        
+        try {
+          // Tampilkan loading dialog
+          if (context.mounted) {
+            _showLoadingDialog(context);
+          }
 
-      // 5. PROSES DOWNLOAD
-      await dio.download(
-        url,
-        savePath,
-        options: Options(followRedirects: true),
-      );
+          debugPrint("Starting download: url=$url, fileName=$finalFileName");
 
-      // 6. TUTUP LOADING & NOTIFIKASI BERHASIL
-      if (context.mounted) {
-        Navigator.pop(context); // Tutup dialog
-        _showSnackBar(context, "Berhasil! File disimpan di folder Download", Colors.green);
+          // Panggil native method untuk download
+          final result = await platform.invokeMethod('downloadFile', {
+            'url': url,
+            'fileName': finalFileName,
+          });
+
+          debugPrint("Download result: $result");
+
+          // Tutup loading dialog
+          if (context.mounted) {
+            Navigator.pop(context);
+          }
+
+          if (result != null) {
+            // Download berhasil dimulai (result adalah download ID)
+            if (context.mounted) {
+              _showSnackBar(
+                context, 
+                "Download dimulai! File akan disimpan di folder Download", 
+                Colors.green
+              );
+            }
+          } else {
+            throw PlatformException(
+              code: 'DOWNLOAD_FAILED',
+              message: 'Download failed to start',
+            );
+          }
+        } on PlatformException catch (e) {
+          // Tutup loading dialog jika ada error
+          if (context.mounted) {
+            if (Navigator.canPop(context)) Navigator.pop(context);
+            debugPrint("Platform error: ${e.code} - ${e.message}");
+            String errorMessage = "Gagal memulai download.";
+            if (e.message != null) {
+              errorMessage += " ${e.message}";
+            }
+            _showSnackBar(context, errorMessage, Colors.red);
+          }
+        } catch (e) {
+          // Tutup loading dialog jika ada error
+          if (context.mounted) {
+            if (Navigator.canPop(context)) Navigator.pop(context);
+            debugPrint("Download error: $e");
+            _showSnackBar(
+              context, 
+              "Gagal memulai download. Periksa koneksi internet Anda.", 
+              Colors.red
+            );
+          }
+        }
+      } else {
+        // Untuk iOS atau platform lain, gunakan fallback
+        if (context.mounted) {
+          _showSnackBar(
+            context, 
+            "Platform tidak didukung untuk download", 
+            Colors.orange
+          );
+        }
       }
     } catch (e) {
       if (context.mounted) {
         if (Navigator.canPop(context)) Navigator.pop(context);
         debugPrint("Error: $e");
-        _showSnackBar(context, "Gagal mengunduh. Periksa koneksi atau izin storage.", Colors.red);
+        _showSnackBar(
+          context, 
+          "Gagal mengunduh. Periksa koneksi internet Anda.", 
+          Colors.red
+        );
       }
     }
   }
