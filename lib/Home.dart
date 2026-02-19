@@ -53,6 +53,21 @@ class KidungJemaat {
   });
 }
 
+/// Model untuk Buku Nyanyian
+class BukuNyanyian {
+  final String title;
+  final int nomor;
+  final String url;
+  final String? lyrics; // Teks lagu (akan di-scrape saat dibuka)
+
+  const BukuNyanyian({
+    required this.title,
+    required this.nomor,
+    required this.url,
+    this.lyrics,
+  });
+}
+
 class Home extends StatefulWidget {
   const Home({super.key});
 
@@ -87,6 +102,15 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
   final TextEditingController _searchKidungJemaatController = TextEditingController();
   Map<String, String> _kidungJemaatLyrics = {}; // Key: URL, Value: lyrics
   Map<String, bool> _loadingKidungJemaatLyrics = {}; // Key: URL, Value: loading state
+
+  /// State untuk Buku Nyanyian
+  List<BukuNyanyian> _bukuNyanyianList = [];
+  List<BukuNyanyian> _filteredBukuNyanyianList = [];
+  bool _isLoadingBukuNyanyian = false;
+  String? _bukuNyanyianError;
+  final TextEditingController _searchBukuNyanyianController = TextEditingController();
+  Map<String, String> _bukuNyanyianLyrics = {}; // Key: URL, Value: lyrics
+  Map<String, bool> _loadingBukuNyanyianLyrics = {}; // Key: URL, Value: loading state
 
   /// Variabel filter
   String selectedBook = 'Mat';
@@ -198,16 +222,18 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _chapterCtrl = TextEditingController(text: selectedChapter);
     _startCtrl = TextEditingController(text: startVerse);
     _endCtrl = TextEditingController(text: endVerse);
     _searchController.addListener(_onSearchChanged);
     _searchKidungJemaatController.addListener(_onSearchKidungJemaatChanged);
+    _searchBukuNyanyianController.addListener(_onSearchBukuNyanyianChanged);
     _validateSelectedBook(); // Validasi sebelum fetch data
     _fetchData();
     _fetchBukuEndeList();
     _fetchKidungJemaatList();
+    _fetchBukuNyanyianList();
   }
 
   @override
@@ -218,6 +244,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
     _endCtrl.dispose();
     _searchController.dispose();
     _searchKidungJemaatController.dispose();
+    _searchBukuNyanyianController.dispose();
     super.dispose();
   }
 
@@ -796,17 +823,23 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                 ),
                 const SizedBox(height: 20),
                 // Tab Bar
-                TabBar(
-                  controller: _tabController,
-                  indicatorColor: Colors.white,
-                  indicatorWeight: 3,
-                  labelColor: Colors.white,
-                  unselectedLabelColor: Colors.white70,
-                  tabs: const [
-                    Tab(text: 'Alkitab'),
-                    Tab(text: 'B. Ende'),
-                    Tab(text: 'K. Jemaat'),
-                  ],
+                SizedBox(
+                  height: 50,
+                  child: TabBar(
+                    controller: _tabController,
+                    indicatorColor: Colors.white,
+                    indicatorWeight: 3,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: Colors.white70,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    tabs: const [
+                      Tab(text: 'Alkitab'),
+                      Tab(text: 'B. Ende'),
+                      Tab(text: 'K. Jemaat'),
+                      Tab(text: 'B. Nyanyian'),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -822,6 +855,8 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                 _buildBukuEndeTab(),
                 // Tab 3: Kidung Jemaat
                 _buildKidungJemaatTab(),
+                // Tab 4: Buku Nyanyian
+                _buildBukuNyanyianTab(),
               ],
             ),
           ),
@@ -970,24 +1005,79 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                           margin: const EdgeInsets.only(top: 20, bottom: 20),
                           padding: const EdgeInsets.all(16),
                           child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Sumber data: https://api.ayt.co/',
-                                textAlign: TextAlign.center,
+                                'Alkitab Bahasa Indonesia:',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Sumber: https://api.ayt.co',
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: Colors.grey[500],
-                                  fontStyle: FontStyle.normal,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Alkitab Bahasa Batak Toba:',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Sumber: https://alkitab.mobi/',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'AYT: Copyrighted by Yayasan Lembaga SABDA (YLSA)',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
                                 ),
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Copyrighted Lembaga by Yayasan Lentera Bangsa (SABDA)',
-                                textAlign: TextAlign.center,
+                                'Alkitab Bahasa Batak Toba - Copyrighted 1998 Indonesia Bible Society Batak Toba (BBC)',
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 11,
                                   color: Colors.grey[600],
-                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '(https://www.bible.com/id/version/17)',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Alkitab (TL) 1974 - Copyrighted LAI 1974',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Alkitab (TB) 1954 - Copyrighted LAI 1954',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
                                 ),
                               ),
                             ],
@@ -1134,24 +1224,6 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                                             fontStyle: FontStyle.italic,
                                           ),
                                         ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          'Sumber: https://alkitab.mobi/',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.orange[600],
-                                            fontStyle: FontStyle.normal,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Copyrighted Lembaga by Yayasan Lentera Bangsa (SABDA)',
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            color: Colors.orange[600],
-                                            fontStyle: FontStyle.normal,
-                                          ),
-                                        ),
                                       ],
                                     ),
                                   );
@@ -1254,7 +1326,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                                 child: Column(
                                   children: [
                                     Text(
-                                      'Sumber data: https://alkitab.mobi/kidung/kj/',
+                                      'Sumber: https://alkitab.mobi/kidung/kj/',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontSize: 11,
@@ -1264,12 +1336,22 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
-                                      'Copyrighted by Yayasan Lentera Bangsa',
+                                      'Diterbitkan oleh: YAMUGER (Yayasan Musik Gereja di Indonesia)',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
-                                        fontSize: 12,
+                                        fontSize: 11,
                                         color: Colors.grey[600],
-                                        fontStyle: FontStyle.italic,
+                                        fontStyle: FontStyle.normal,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'AYT: Copyrighted by Yayasan Lembaga SABDA (YLSA)',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                        fontStyle: FontStyle.normal,
                                       ),
                                     ),
                                   ],
@@ -1394,7 +1476,16 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Copyrighted by Yayasan Lentera Bangsa',
+                            'Diterbitkan oleh: YAMUGER (Yayasan Musik Gereja di Indonesia)',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.grey[500],
+                              fontStyle: FontStyle.normal,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'AYT: Copyrighted by Yayasan Lembaga SABDA (YLSA)',
                             style: TextStyle(
                               fontSize: 9,
                               color: Colors.grey[500],
@@ -1622,6 +1713,688 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
         }).toList();
       });
     }
+  }
+
+  /// Fetch daftar Buku Nyanyian dari lirikbukuende.blogspot.com
+  Future<void> _fetchBukuNyanyianList() async {
+    setState(() {
+      _isLoadingBukuNyanyian = true;
+      _bukuNyanyianError = null;
+    });
+
+    try {
+      final response = await http.get(
+        Uri.parse('https://lirikbukuende.blogspot.com/'),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      ).timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200) {
+        final document = html_parser.parse(response.body);
+        final List<BukuNyanyian> bukuNyanyianList = [];
+
+        // Cari semua link yang berisi "BN." atau "BN " (Buku Nyanyian)
+        // Format dari website: "BN. 01. HAI BANGKITLAH JIWAKU"
+        final links = document.querySelectorAll('a');
+        
+        for (final link in links) {
+          final href = link.attributes['href'];
+          final text = link.text.trim();
+          
+          // Format: "BN. 01. HAI BANGKITLAH JIWAKU" atau "BN 01. HAI BANGKITLAH JIWAKU"
+          // Regex untuk menangkap: BN. atau BN diikuti spasi, nomor, titik, spasi, lalu judul
+          final bnMatch = RegExp(r'BN\.?\s*(\d+)\.\s*(.+)', caseSensitive: false).firstMatch(text);
+          
+          if (bnMatch != null && href != null) {
+            // Pastikan URL adalah URL detail (bukan search URL atau homepage)
+            // URL detail biasanya: http://lirikbukuende.blogspot.co.id/2017/08/bn-1-hai-bangkitlah-jiwaku.html
+            // atau: https://lirikbukuende.blogspot.com/2017/08/bn-1-hai-bangkitlah-jiwaku.html
+            final isDetailUrl = href.contains('lirikbukuende.blogspot') && 
+                               (href.contains('/20') || href.contains('/bn-') || href.contains('/bn.')) &&
+                               !href.contains('search') &&
+                               !href.contains('label') &&
+                               !href.contains('#') &&
+                               href.endsWith('.html');
+            
+            if (isDetailUrl) {
+              final nomor = int.tryParse(bnMatch.group(1) ?? '') ?? 0;
+              final title = bnMatch.group(2)?.trim() ?? '';
+              
+              if (nomor > 0 && title.isNotEmpty) {
+                // Cek apakah sudah ada (untuk menghindari duplikat)
+                final exists = bukuNyanyianList.any((item) => item.nomor == nomor);
+                if (!exists) {
+                  print('=== BUKU NYANYIAN LIST ===');
+                  print('Nomor: $nomor');
+                  print('Title: $title');
+                  print('URL: $href');
+                  print('=======================');
+                  
+                  bukuNyanyianList.add(BukuNyanyian(
+                    title: title,
+                    nomor: nomor,
+                    url: href,
+                  ));
+                }
+              }
+            }
+          }
+        }
+        
+        // Jika masih belum cukup, cari dari teks biasa dan cari link terdekat
+        if (bukuNyanyianList.length < 10) {
+          // Cari semua elemen yang berisi teks "BN."
+          final allText = document.body?.text ?? '';
+          final bnPattern = RegExp(r'BN\.\s*(\d+)\.\s*([^\n]+)', caseSensitive: false);
+          final matches = bnPattern.allMatches(allText);
+          
+          for (final match in matches) {
+            final nomor = int.tryParse(match.group(1) ?? '') ?? 0;
+            final title = match.group(2)?.trim() ?? '';
+            
+            if (nomor > 0 && title.isNotEmpty) {
+              // Cek apakah sudah ada
+              final exists = bukuNyanyianList.any((item) => item.nomor == nomor);
+              if (!exists) {
+                // Coba cari URL detail yang terkait dengan nomor ini
+                String? foundUrl;
+                
+                // Cari link yang berisi nomor dan format detail URL
+                for (final link in links) {
+                  final href = link.attributes['href'];
+                  if (href != null && 
+                      href.contains('lirikbukuende.blogspot') &&
+                      (href.contains('/bn-$nomor') || 
+                       href.contains('/bn.$nomor') ||
+                       href.contains('/bn-$nomor-') ||
+                       href.contains('/bn.$nomor-') ||
+                       href.contains('bn-$nomor') ||
+                       href.contains('bn.$nomor')) &&
+                      !href.contains('search') &&
+                      !href.contains('label') &&
+                      href.endsWith('.html')) {
+                    foundUrl = href;
+                    break;
+                  }
+                }
+                
+                // Jika masih tidak ditemukan, coba cari berdasarkan pattern URL detail
+                if (foundUrl == null) {
+                  // Format URL detail: http://lirikbukuende.blogspot.co.id/2017/08/bn-1-hai-bangkitlah-jiwaku.html
+                  // Cari link yang mengandung pattern tahun/bulan dan nomor
+                  for (final link in links) {
+                    final href = link.attributes['href'];
+                    if (href != null && 
+                        href.contains('lirikbukuende.blogspot') &&
+                        href.contains('/20') && // Tahun (2017, 2018, dll)
+                        href.contains('/bn') &&
+                        !href.contains('search') &&
+                        !href.contains('label') &&
+                        href.endsWith('.html')) {
+                      // Cek apakah nomor cocok dengan pattern di URL
+                      final urlMatch = RegExp(r'bn[.-]?0?$nomor[.-]', caseSensitive: false).firstMatch(href);
+                      if (urlMatch != null) {
+                        foundUrl = href;
+                        break;
+                      }
+                    }
+                  }
+                }
+                
+                // Hanya tambahkan jika URL detail ditemukan (jangan gunakan search URL)
+                if (foundUrl != null && !foundUrl.contains('search')) {
+                  print('=== BUKU NYANYIAN LIST (from text) ===');
+                  print('Nomor: $nomor');
+                  print('Title: $title');
+                  print('URL: $foundUrl');
+                  print('===================================');
+                  
+                  bukuNyanyianList.add(BukuNyanyian(
+                    title: title,
+                    nomor: nomor,
+                    url: foundUrl,
+                  ));
+                }
+              }
+            }
+          }
+        }
+
+        // Sort berdasarkan nomor
+        bukuNyanyianList.sort((a, b) => a.nomor.compareTo(b.nomor));
+
+        setState(() {
+          _bukuNyanyianList = bukuNyanyianList;
+          _filteredBukuNyanyianList = bukuNyanyianList;
+          _isLoadingBukuNyanyian = false;
+        });
+      } else {
+        setState(() {
+          _isLoadingBukuNyanyian = false;
+          _bukuNyanyianError = 'Gagal memuat daftar Buku Nyanyian';
+        });
+      }
+    } catch (e) {
+      ErrorHandler.logError(e);
+      if (mounted) {
+        setState(() {
+          _isLoadingBukuNyanyian = false;
+          _bukuNyanyianError = ErrorHandler.getUserFriendlyMessage(e);
+        });
+      }
+    }
+  }
+
+  /// Fetch detail lagu Buku Nyanyian
+  Future<void> _fetchBukuNyanyianLyrics(String url) async {
+    if (_bukuNyanyianLyrics.containsKey(url)) return;
+
+    setState(() {
+      _loadingBukuNyanyianLyrics[url] = true;
+    });
+
+    try {
+      print('=== FETCH BUKU NYANYIAN LYRICS ===');
+      print('URL: $url');
+      print('================================');
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final document = html_parser.parse(response.body);
+        
+        // Cari konten utama lagu
+        String lyrics = '';
+        
+        // Cari di post-body atau entry-content
+        final content = document.querySelector('.post-body') ?? 
+                       document.querySelector('.entry-content') ??
+                       document.querySelector('.post-content') ??
+                       document.querySelector('article') ??
+                       document.querySelector('.post');
+        
+        if (content != null) {
+          // Hapus elemen share button dan social media
+          content.querySelectorAll('.sharedaddy, .sd-block, .jetpack-share, .social-share, [class*="share"], [class*="facebook"], [class*="twitter"], [id*="share"], [id*="facebook"], [class*="comment"], [class*="label"], [class*="ads"], [id*="ads"], [class*="advertisement"], [id*="advertisement"], [class*="google"], [id*="google"]').forEach((el) => el.remove());
+          
+          // Hapus script tags dan style tags
+          content.querySelectorAll('script, style, noscript, iframe').forEach((el) => el.remove());
+          
+          // Hapus elemen yang tidak relevan (judul, label, dll)
+          content.querySelectorAll('h1, h2, h3, h4, h5, h6, .post-title, .entry-title').forEach((el) => el.remove());
+          
+          // Hapus semua elemen yang berisi Google Ads code
+          content.querySelectorAll('[class*="ads"], [id*="ads"], [class*="advertisement"], [id*="advertisement"], [class*="google"], [id*="google"], [class*="ad-"], [id*="ad-"]').forEach((el) => el.remove());
+          
+          // Hapus semua text node yang berisi Google Ads code
+          final allTextNodes = content.querySelectorAll('*');
+          for (final node in allTextNodes) {
+            final text = node.text;
+            if (text.contains('google_ad') || 
+                text.contains('adsbygoogle') || 
+                text.contains('google_ad_client') ||
+                text.contains('google_ad_width') ||
+                text.contains('google_ad_height') ||
+                text.contains('google_ad_slot')) {
+              node.remove();
+            }
+          }
+          
+          // Ambil semua paragraf terlebih dahulu (lirik biasanya dalam <p>)
+          final paragraphs = content.querySelectorAll('p');
+          
+          for (final p in paragraphs) {
+            String text = p.text.trim();
+            
+            // Skip jika kosong atau terlalu pendek
+            if (text.isEmpty || text.length < 5) continue;
+            
+            // Skip jika berisi teks yang tidak relevan
+            final lowerText = text.toLowerCase();
+            if (lowerText.contains('bagikan') ||
+                lowerText.contains('suka') ||
+                lowerText.contains('komentar') ||
+                lowerText.contains('facebook') ||
+                lowerText.contains('twitter') ||
+                lowerText.contains('whatsapp') ||
+                lowerText.contains('share') ||
+                lowerText.contains('tweet') ||
+                lowerText.contains('like') ||
+                lowerText.contains('follow') ||
+                lowerText.contains('label') ||
+                lowerText.contains('buku nyanyian hkbp') ||
+                lowerText.contains('daftar lagu') ||
+                lowerText.contains('email this') ||
+                lowerText.contains('blogthis') ||
+                lowerText.contains('subscribe') ||
+                lowerText.contains('comment') ||
+                lowerText.contains('newer post') ||
+                lowerText.contains('older post') ||
+                lowerText.contains('home') ||
+                text.contains('<!--') ||
+                text.contains('google_ad') ||
+                lowerText.contains('google_ad_client') ||
+                lowerText.contains('google_ad_width') ||
+                lowerText.contains('google_ad_height') ||
+                lowerText.contains('google_ad_slot') ||
+                lowerText.contains('adsbygoogle') ||
+                text.contains('http://') ||
+                text.contains('https://') ||
+                text.contains('youyic_au_wmuur') ||
+                text.contains('000,')) {
+              continue;
+            }
+            
+            // Normalisasi teks (hapus spasi berlebihan, tapi pertahankan struktur baris)
+            text = text.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
+            
+            if (text.isNotEmpty) {
+              // Jika ini nomor bait baru (dimulai dengan angka dan titik), tambahkan newline
+              if (RegExp(r'^\d+\.').hasMatch(text)) {
+                if (lyrics.isNotEmpty) {
+                  lyrics += '\n\n';
+                }
+              } else if (lyrics.isNotEmpty && !lyrics.endsWith('\n\n')) {
+                // Jika bukan nomor bait, tambahkan newline untuk baris baru
+                lyrics += '\n';
+              }
+              lyrics += text;
+            }
+          }
+          
+          // Jika tidak ada paragraf yang valid, coba ambil dari div
+          if (lyrics.isEmpty) {
+            final divs = content.querySelectorAll('div');
+            for (final div in divs) {
+              String text = div.text.trim();
+              
+              if (text.isEmpty || text.length < 10) continue;
+              
+              // Skip jika berisi teks yang tidak relevan
+              final lowerText = text.toLowerCase();
+              if (lowerText.contains('bagikan') ||
+                  lowerText.contains('suka') ||
+                  lowerText.contains('komentar') ||
+                  lowerText.contains('email') ||
+                  lowerText.contains('subscribe') ||
+                  text.contains('http://') ||
+                  text.contains('https://')) {
+                continue;
+              }
+              
+              // Cek apakah ini berisi nomor bait (1., 2., 3., dll)
+              if (RegExp(r'\d+\.').hasMatch(text) && text.length > 20) {
+                text = text.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
+                if (lyrics.isNotEmpty) {
+                  lyrics += '\n\n';
+                }
+                lyrics += text;
+              }
+            }
+          }
+        }
+
+        if (lyrics.isNotEmpty) {
+          // Bersihkan baris kosong berlebihan
+          lyrics = lyrics.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+          
+          // Hapus HTML comments dan Google Ads
+          lyrics = lyrics
+              .replaceAll(RegExp(r'<!--.*?-->', dotAll: true), '')
+              .replaceAll(RegExp(r'<script.*?</script>', dotAll: true, caseSensitive: false), '')
+              .replaceAll(RegExp(r'google_ad_client.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'google_ad_width.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'google_ad_height.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'google_ad_slot.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'adsbygoogle.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'youyic_au_wmuur.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'000,.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'//→.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'<!--.*', dotAll: true), '')
+              .replaceAll(RegExp(r'-->.*', dotAll: true), '');
+          
+          // Hapus teks yang tidak perlu
+          lyrics = lyrics
+              .replaceAll(RegExp(r'Sumber:.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'Copyrighted.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'Copyright.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'lirikbukuende\.blogspot\.com.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'https?://.*', caseSensitive: false), '')
+              .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+              .trim();
+          
+          print('=== LYRICS BERHASIL DIAMBIL ===');
+          print('URL: $url');
+          print('Panjang lirik: ${lyrics.length} karakter');
+          print('Preview lirik (100 karakter pertama): ${lyrics.substring(0, lyrics.length > 100 ? 100 : lyrics.length)}...');
+          print('================================');
+          
+          setState(() {
+            _bukuNyanyianLyrics[url] = lyrics;
+            _loadingBukuNyanyianLyrics[url] = false;
+          });
+        } else {
+          print('=== LYRICS TIDAK DITEMUKAN ===');
+          print('URL: $url');
+          print('=============================');
+          
+          setState(() {
+            _bukuNyanyianLyrics[url] = 'Lirik tidak ditemukan';
+            _loadingBukuNyanyianLyrics[url] = false;
+          });
+        }
+      } else {
+        print('=== FETCH LYRICS GAGAL ===');
+        print('URL: $url');
+        print('Status Code: ${response.statusCode}');
+        print('==========================');
+        
+        setState(() {
+          _bukuNyanyianLyrics[url] = 'Gagal memuat lirik';
+          _loadingBukuNyanyianLyrics[url] = false;
+        });
+      }
+    } catch (e) {
+      print('=== ERROR FETCH LYRICS ===');
+      print('URL: $url');
+      print('Error: $e');
+      print('=========================');
+      
+      ErrorHandler.logError(e);
+      if (mounted) {
+        setState(() {
+          _bukuNyanyianLyrics[url] = ErrorHandler.getUserFriendlyMessage(e);
+          _loadingBukuNyanyianLyrics[url] = false;
+        });
+      }
+    }
+  }
+
+  /// Filter daftar Buku Nyanyian berdasarkan search query
+  void _onSearchBukuNyanyianChanged() {
+    final query = _searchBukuNyanyianController.text.toLowerCase().trim();
+    
+    if (query.isEmpty) {
+      setState(() {
+        _filteredBukuNyanyianList = _bukuNyanyianList;
+      });
+    } else {
+      setState(() {
+        _filteredBukuNyanyianList = _bukuNyanyianList.where((lagu) {
+          return lagu.title.toLowerCase().contains(query) ||
+                 lagu.nomor.toString().contains(query);
+        }).toList();
+      });
+    }
+  }
+
+  Widget _buildBukuNyanyianTab() {
+    return Column(
+      children: [
+        // Search Bar
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: Colors.white,
+          child: TextField(
+            controller: _searchBukuNyanyianController,
+            decoration: InputDecoration(
+              hintText: 'Cari lagu Buku Nyanyian...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchBukuNyanyianController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchBukuNyanyianController.clear();
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              filled: true,
+              fillColor: Colors.grey[50],
+            ),
+          ),
+        ),
+        // List atau Loading/Error
+        Expanded(
+          child: _isLoadingBukuNyanyian
+              ? const Center(child: CircularProgressIndicator())
+              : _bukuNyanyianError != null
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+                          const SizedBox(height: 16),
+                          Text(
+                            _bukuNyanyianError!,
+                            style: TextStyle(color: Colors.grey[600]),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: _fetchBukuNyanyianList,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Coba Lagi'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _filteredBukuNyanyianList.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.music_off, size: 48, color: Colors.grey[400]),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Tidak ada lagu ditemukan',
+                                style: TextStyle(color: Colors.grey[600]),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _filteredBukuNyanyianList.length + 1,
+                          itemBuilder: (context, index) {
+                            // Footer copyright di item terakhir
+                            if (index == _filteredBukuNyanyianList.length) {
+                              return Container(
+                                margin: const EdgeInsets.only(top: 20, bottom: 20),
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      'Buku Nyanyian HKBP',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Sumber: https://lirikbukuende.blogspot.com/',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                        fontStyle: FontStyle.normal,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'BUKU NYANYIAN HKBP adalah versi online elektronik dari Buku Ende HKBP terjemahan Bahasa Indonesia yang biasanya dipakai oleh Gereja HKBP.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                        fontStyle: FontStyle.normal,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Hak Cipta Sepenuhnya dimiliki oleh HKBP-Huria Kristen Batak Prostestan',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            
+                            final lagu = _filteredBukuNyanyianList[index];
+                            final lyrics = _bukuNyanyianLyrics[lagu.url];
+                            final isLoading = _loadingBukuNyanyianLyrics[lagu.url] ?? false;
+                            final hasLyrics = lyrics != null && lyrics.isNotEmpty;
+
+                            return _buildBukuNyanyianItem(lagu, lyrics, isLoading, hasLyrics);
+                          },
+                        ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBukuNyanyianItem(BukuNyanyian lagu, String? lyrics, bool isLoading, bool hasLyrics) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ExpansionTile(
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.teal[100],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: Text(
+              '${lagu.nomor}',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.teal[900],
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ),
+        title: Text(
+          lagu.title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+        ),
+        subtitle: Text(
+          'BN. ${lagu.nomor}',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+        trailing: isLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(
+                hasLyrics ? Icons.expand_less : Icons.expand_more,
+                color: Colors.teal[700],
+              ),
+        onExpansionChanged: (expanded) {
+          if (expanded && !hasLyrics && !isLoading) {
+            _fetchBukuNyanyianLyrics(lagu.url);
+          }
+        },
+        children: [
+          if (hasLyrics)
+            Container(
+              padding: const EdgeInsets.all(16),
+              width: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Builder(
+                    builder: (context) {
+                      final lyricsText = lyrics ?? 'Lirik tidak tersedia';
+                      if (lyricsText == 'Lirik tidak tersedia') {
+                        return Text(
+                          lyricsText,
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.6,
+                            color: Colors.grey[800],
+                          ),
+                        );
+                      }
+                      
+                      String cleanedText = lyricsText
+                          .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+                          .trim();
+                          
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            cleanedText,
+                            style: TextStyle(
+                              fontSize: 14,
+                              height: 1.5,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Sumber: https://lirikbukuende.blogspot.com/',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[500],
+                              fontStyle: FontStyle.normal,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            )
+          else if (isLoading)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+        ],
+      ),
+    );
   }
 
   /// Fetch daftar Buku Ende dari WordPress

@@ -34,13 +34,43 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      // Get FCM token
+      // Get FCM token dengan retry
       String? fcmToken;
       try {
-        fcmToken = await FirebaseMessaging.instance.getToken();
-        debugPrint('FCM Token: $fcmToken');
-      } catch (e) {
+        // Coba ambil token dengan timeout
+        fcmToken = await FirebaseMessaging.instance.getToken().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            debugPrint('FCM token timeout after 5 seconds');
+            return null;
+          },
+        );
+        
+        debugPrint('=== FCM TOKEN DEBUG ===');
+        debugPrint('FCM Token: ${fcmToken != null ? "${fcmToken.substring(0, 50)}..." : "null"}');
+        debugPrint('FCM Token length: ${fcmToken?.length ?? 0}');
+        debugPrint('FCM Token is null: ${fcmToken == null}');
+        debugPrint('FCM Token is empty: ${fcmToken?.isEmpty ?? true}');
+        debugPrint('======================');
+        
+        // Jika token null, coba sekali lagi
+        if (fcmToken == null) {
+          debugPrint('FCM token is null, retrying...');
+          await Future.delayed(const Duration(milliseconds: 500));
+          fcmToken = await FirebaseMessaging.instance.getToken().timeout(
+            const Duration(seconds: 5),
+            onTimeout: () {
+              debugPrint('FCM token retry timeout');
+              return null;
+            },
+          );
+          debugPrint('FCM Token after retry: ${fcmToken != null ? "received" : "still null"}');
+        }
+      } catch (e, stackTrace) {
+        debugPrint('=== FCM TOKEN ERROR ===');
         debugPrint('Error getting FCM token: $e');
+        debugPrint('Stack trace: $stackTrace');
+        debugPrint('======================');
         // Continue login even if FCM token fails
       }
 
@@ -55,7 +85,12 @@ class _LoginPageState extends State<LoginPage> {
       // Add FCM token if available
       if (fcmToken != null && fcmToken.isNotEmpty) {
         requestBody["fcm_token"] = fcmToken;
+        debugPrint('FCM token added to request body');
+      } else {
+        debugPrint('WARNING: FCM token is null or empty, not sending to API');
       }
+      
+      debugPrint('Request body: ${jsonEncode(requestBody)}');
       
       var response = await http.post(
         url,
@@ -63,7 +98,20 @@ class _LoginPageState extends State<LoginPage> {
         body: jsonEncode(requestBody),
       ).timeout(const Duration(seconds: 20));
 
+      debugPrint('=== LOGIN RESPONSE ===');
+      debugPrint('Status Code: ${response.statusCode}');
+      debugPrint('Response Body: ${response.body}');
+      debugPrint('=====================');
+
       var data = jsonDecode(response.body);
+      
+      // Log FCM token update status jika ada
+      if (data.containsKey('fcm_token_update')) {
+        debugPrint('=== FCM TOKEN UPDATE STATUS ===');
+        debugPrint('Status: ${data['fcm_token_update']['status']}');
+        debugPrint('Message: ${data['fcm_token_update']['message']}');
+        debugPrint('==============================');
+      }
 
       if (response.statusCode == 200 && data['status'] == 'success') {
         final int userId = data['id_jemaat'];
