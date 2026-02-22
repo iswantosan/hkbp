@@ -1724,7 +1724,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
 
     try {
       final response = await http.get(
-        Uri.parse('https://lirikbukuende.blogspot.com/'),
+        Uri.parse('https://lirikbukuende.blogspot.com/2017/08/daftar-buku-nyanyian-hkbp.html#more'),
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         },
@@ -1912,12 +1912,18 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
         // Cari konten utama lagu
         String lyrics = '';
         
-        // Cari di post-body atau entry-content
+        // Cari di post-body atau entry-content - coba lebih banyak selector
         final content = document.querySelector('.post-body') ?? 
                        document.querySelector('.entry-content') ??
                        document.querySelector('.post-content') ??
                        document.querySelector('article') ??
-                       document.querySelector('.post');
+                       document.querySelector('.post') ??
+                       document.querySelector('.entry') ??
+                       document.querySelector('.post-body.entry-content') ??
+                       document.querySelector('[class*="post-body"]') ??
+                       document.querySelector('[class*="entry-content"]') ??
+                       document.querySelector('main') ??
+                       document.querySelector('.content');
         
         if (content != null) {
           // Hapus elemen share button dan social media
@@ -1967,8 +1973,8 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                 lowerText.contains('tweet') ||
                 lowerText.contains('like') ||
                 lowerText.contains('follow') ||
-                lowerText.contains('label') ||
-                lowerText.contains('buku nyanyian hkbp') ||
+                (lowerText.contains('label') && !lowerText.contains('dalam huruf')) ||
+                (lowerText.contains('buku nyanyian hkbp') && text.length < 50) ||
                 lowerText.contains('daftar lagu') ||
                 lowerText.contains('email this') ||
                 lowerText.contains('blogthis') ||
@@ -1984,8 +1990,8 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                 lowerText.contains('google_ad_height') ||
                 lowerText.contains('google_ad_slot') ||
                 lowerText.contains('adsbygoogle') ||
-                text.contains('http://') ||
-                text.contains('https://') ||
+                (text.contains('http://') && !text.contains('lirik')) ||
+                (text.contains('https://') && !text.contains('lirik')) ||
                 text.contains('youyic_au_wmuur') ||
                 text.contains('000,')) {
               continue;
@@ -1995,8 +2001,11 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
             text = text.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
             
             if (text.isNotEmpty) {
-              // Jika ini nomor bait baru (dimulai dengan angka dan titik), tambahkan newline
-              if (RegExp(r'^\d+\.').hasMatch(text)) {
+              // Deteksi format nomor bait: "1:", "2:", "1.", "2.", atau "1="
+              final isBaitNumber = RegExp(r'^\d+[\.:]').hasMatch(text) || 
+                                  RegExp(r'^\d+=').hasMatch(text);
+              
+              if (isBaitNumber) {
                 if (lyrics.isNotEmpty) {
                   lyrics += '\n\n';
                 }
@@ -2005,6 +2014,55 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                 lyrics += '\n';
               }
               lyrics += text;
+            }
+          }
+          
+          // Jika masih belum ada lirik, coba ambil langsung dari text content
+          if (lyrics.isEmpty) {
+            // Ambil semua text nodes dari content, skip elemen yang sudah dihapus
+            final allText = content.text;
+            if (allText.isNotEmpty) {
+              // Split berdasarkan baris dan filter
+              final lines = allText.split('\n');
+              for (final line in lines) {
+                String text = line.trim();
+                if (text.isEmpty || text.length < 10) continue;
+                
+                final lowerText = text.toLowerCase();
+                // Skip teks yang tidak relevan
+                if (lowerText.contains('bagikan') ||
+                    lowerText.contains('suka') ||
+                    lowerText.contains('komentar') ||
+                    lowerText.contains('email this') ||
+                    lowerText.contains('blogthis') ||
+                    lowerText.contains('subscribe') ||
+                    lowerText.contains('newer post') ||
+                    lowerText.contains('older post') ||
+                    lowerText.contains('home') ||
+                    lowerText.contains('no comment') ||
+                    lowerText.contains('post a comment') ||
+                    (lowerText.contains('label') && !lowerText.contains('dalam huruf')) ||
+                    text.contains('http://') ||
+                    text.contains('https://') ||
+                    text.contains('<!--')) {
+                  continue;
+                }
+                
+                // Ambil teks yang kemungkinan lirik (ada nomor bait atau teks panjang)
+                if (RegExp(r'^\d+[\.:]').hasMatch(text) || 
+                    RegExp(r'^\d+=').hasMatch(text) ||
+                    (text.length > 30 && !text.contains('Popular') && !text.contains('Daftar'))) {
+                  if (lyrics.isNotEmpty) {
+                    // Jika sebelumnya ada nomor bait, tambahkan newline
+                    if (RegExp(r'^\d+[\.:]').hasMatch(text) || RegExp(r'^\d+=').hasMatch(text)) {
+                      lyrics += '\n\n';
+                    } else {
+                      lyrics += '\n';
+                    }
+                  }
+                  lyrics += text;
+                }
+              }
             }
           }
           
@@ -2023,18 +2081,148 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                   lowerText.contains('komentar') ||
                   lowerText.contains('email') ||
                   lowerText.contains('subscribe') ||
+                  lowerText.contains('label') ||
+                  lowerText.contains('buku nyanyian hkbp') ||
+                  lowerText.contains('daftar lagu') ||
+                  lowerText.contains('newer post') ||
+                  lowerText.contains('older post') ||
+                  lowerText.contains('home') ||
+                  lowerText.contains('no comment') ||
                   text.contains('http://') ||
                   text.contains('https://')) {
                 continue;
               }
               
-              // Cek apakah ini berisi nomor bait (1., 2., 3., dll)
-              if (RegExp(r'\d+\.').hasMatch(text) && text.length > 20) {
+              // Cek apakah ini berisi nomor bait (1., 2., 3., 1:, 2:, 1=, dll) atau teks lirik
+              final hasBaitNumber = RegExp(r'^\d+[\.:]').hasMatch(text) || 
+                                   RegExp(r'^\d+=').hasMatch(text) ||
+                                   RegExp(r'\d+\.').hasMatch(text);
+              
+              if ((hasBaitNumber || text.length > 30) && text.length > 20) {
                 text = text.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
                 if (lyrics.isNotEmpty) {
-                  lyrics += '\n\n';
+                  // Jika ini nomor bait baru, tambahkan newline
+                  if (RegExp(r'^\d+[\.:]').hasMatch(text) || RegExp(r'^\d+=').hasMatch(text)) {
+                    lyrics += '\n\n';
+                  } else {
+                    lyrics += '\n';
+                  }
                 }
                 lyrics += text;
+              }
+            }
+          }
+          
+          // Jika masih kosong, coba ambil dari span atau elemen lain
+          if (lyrics.isEmpty) {
+            final spans = content.querySelectorAll('span, p, div');
+            for (final element in spans) {
+              String text = element.text.trim();
+              
+              if (text.isEmpty || text.length < 15) continue;
+              
+              // Skip jika berisi teks yang tidak relevan
+              final lowerText = text.toLowerCase();
+              if (lowerText.contains('bagikan') ||
+                  lowerText.contains('suka') ||
+                  lowerText.contains('komentar') ||
+                  lowerText.contains('email') ||
+                  lowerText.contains('subscribe') ||
+                  (lowerText.contains('label') && !lowerText.contains('dalam huruf')) ||
+                  (lowerText.contains('buku nyanyian hkbp') && text.length < 50) ||
+                  lowerText.contains('daftar lagu') ||
+                  lowerText.contains('newer post') ||
+                  lowerText.contains('older post') ||
+                  lowerText.contains('home') ||
+                  lowerText.contains('no comment') ||
+                  lowerText.contains('post a comment') ||
+                  text.contains('http://') ||
+                  text.contains('https://') ||
+                  text.contains('<!--')) {
+                continue;
+              }
+              
+              // Ambil teks yang panjang dan kemungkinan berisi lirik
+              if (text.length > 30 && !text.contains('Popular') && !text.contains('Daftar')) {
+                // Cek apakah mengandung pola lirik (ada angka bait dengan format 1:, 2:, 1., 2., atau 1=)
+                final hasBaitPattern = RegExp(r'\d+[\.:]').hasMatch(text) || 
+                                     RegExp(r'\d+=').hasMatch(text);
+                
+                if (hasBaitPattern || 
+                    (text.length > 50 && !text.contains('blogspot') && !text.contains('google'))) {
+                  if (lyrics.isNotEmpty) {
+                    // Jika ini nomor bait baru, tambahkan newline
+                    if (RegExp(r'^\d+[\.:]').hasMatch(text) || RegExp(r'^\d+=').hasMatch(text)) {
+                      lyrics += '\n\n';
+                    } else if (!lyrics.endsWith('\n\n')) {
+                      lyrics += '\n';
+                    }
+                  }
+                  lyrics += text.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
+                }
+              }
+            }
+          }
+          
+          // Fallback terakhir: ambil semua teks dari content dan filter manual
+          if (lyrics.isEmpty) {
+            final allText = content.text;
+            if (allText.isNotEmpty) {
+              // Split berdasarkan baris
+              final lines = allText.split('\n');
+              bool foundLyricsStart = false;
+              
+              for (final line in lines) {
+                String text = line.trim();
+                if (text.isEmpty) continue;
+                
+                final lowerText = text.toLowerCase();
+                
+                // Deteksi awal lirik (setelah judul lagu)
+                if (!foundLyricsStart) {
+                  if (RegExp(r'^\d+[\.:]').hasMatch(text) || 
+                      RegExp(r'^\d+=').hasMatch(text) ||
+                      (text.length > 30 && !lowerText.contains('buku nyanyian') && 
+                       !lowerText.contains('label') && !lowerText.contains('email'))) {
+                    foundLyricsStart = true;
+                  } else {
+                    continue;
+                  }
+                }
+                
+                // Skip teks yang tidak relevan
+                if (lowerText.contains('bagikan') ||
+                    lowerText.contains('suka') ||
+                    lowerText.contains('komentar') ||
+                    lowerText.contains('email this') ||
+                    lowerText.contains('blogthis') ||
+                    lowerText.contains('subscribe') ||
+                    lowerText.contains('newer post') ||
+                    lowerText.contains('older post') ||
+                    lowerText.contains('home') ||
+                    lowerText.contains('no comment') ||
+                    lowerText.contains('post a comment') ||
+                    (lowerText.contains('label') && !lowerText.contains('dalam huruf')) ||
+                    text.contains('http://') ||
+                    text.contains('https://') ||
+                    text.contains('<!--') ||
+                    text.length < 10) {
+                  continue;
+                }
+                
+                // Ambil teks yang kemungkinan lirik
+                if (RegExp(r'^\d+[\.:]').hasMatch(text) || 
+                    RegExp(r'^\d+=').hasMatch(text) ||
+                    (text.length > 20 && !text.contains('Popular') && !text.contains('Daftar'))) {
+                  if (lyrics.isNotEmpty) {
+                    if (RegExp(r'^\d+[\.:]').hasMatch(text) || RegExp(r'^\d+=').hasMatch(text)) {
+                      lyrics += '\n\n';
+                    } else {
+                      lyrics += '\n';
+                    }
+                  }
+                  lyrics += text;
+                }
               }
             }
           }
@@ -2127,8 +2315,18 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
     } else {
       setState(() {
         _filteredBukuNyanyianList = _bukuNyanyianList.where((lagu) {
-          return lagu.title.toLowerCase().contains(query) ||
-                 lagu.nomor.toString().contains(query);
+          // Cari di title dan nomor
+          final titleMatch = lagu.title.toLowerCase().contains(query);
+          final nomorMatch = lagu.nomor.toString().contains(query);
+          
+          // Jika sudah ada lirik yang dimuat, cari juga di lirik
+          final lyrics = _bukuNyanyianLyrics[lagu.url];
+          final lyricsMatch = lyrics != null && 
+                            lyrics != 'Lirik tidak ditemukan' && 
+                            lyrics != 'Gagal memuat lirik' &&
+                            lyrics.toLowerCase().contains(query);
+          
+          return titleMatch || nomorMatch || lyricsMatch;
         }).toList();
       });
     }
@@ -2143,6 +2341,9 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
           color: Colors.white,
           child: TextField(
             controller: _searchBukuNyanyianController,
+            onChanged: (value) {
+              _onSearchBukuNyanyianChanged();
+            },
             decoration: InputDecoration(
               hintText: 'Cari lagu Buku Nyanyian...',
               prefixIcon: const Icon(Icons.search),
@@ -2151,6 +2352,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                       icon: const Icon(Icons.clear),
                       onPressed: () {
                         _searchBukuNyanyianController.clear();
+                        _onSearchBukuNyanyianChanged();
                       },
                     )
                   : null,
@@ -2724,8 +2926,44 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                         )
                       : ListView.builder(
                           padding: const EdgeInsets.all(16),
-                          itemCount: _filteredBukuEndeList.length,
+                          itemCount: _filteredBukuEndeList.length + 1,
                           itemBuilder: (context, index) {
+                            // Footer copyright di item terakhir
+                            if (index == _filteredBukuEndeList.length) {
+                              return Container(
+                                margin: const EdgeInsets.only(top: 20, bottom: 20),
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Sumber: https://bukuende.wordpress.com',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Buku Ende HKBP adalah versi online elektronik dari Buku Ende HKBP terjemahan Bahasa Batak Toba yang biasanya dipakai oleh Gereja HKBP',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Hak Cipta Sepenuhnya dimiliki oleh HKBP-Huria Kristen Batak Protestan',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            
                             final lagu = _filteredBukuEndeList[index];
                             return _buildBukuEndeItem(lagu);
                           },
@@ -2825,27 +3063,13 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                           .replaceAll(RegExp(r'\n{3,}'), '\n\n')
                           .trim();
                           
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            cleanedText,
-                            style: TextStyle(
-                              fontSize: 14,
-                              height: 1.5,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Sumber: https://bukuende.wordpress.com/',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey[500],
-                              fontStyle: FontStyle.normal,
-                            ),
-                          ),
-                        ],
+                      return Text(
+                        cleanedText,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          color: Colors.grey[800],
+                        ),
                       );
                     },
                   ),
