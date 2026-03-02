@@ -779,6 +779,13 @@ class _ProfilePageState extends State<ProfilePage> with SingleTickerProviderStat
               },
               child: const Text("Coba Lagi"),
             ),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: _handleLogout,
+              icon: const Icon(Icons.logout, size: 18),
+              label: const Text("Logout"),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+            ),
           ],
         ),
       ),

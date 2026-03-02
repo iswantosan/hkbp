@@ -118,6 +118,10 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
   String startVerse = '16';
   String endVerse = '20';
 
+  /// Filter bahasa Alkitab: 'indonesia' | 'batak'
+  String _alkitabLanguage = 'indonesia';
+  bool _isLoadingBatakPassage = false;
+
   /// Controllers agar tidak dibuat ulang setiap build
   late final TextEditingController _chapterCtrl;
   late final TextEditingController _startCtrl;
@@ -630,6 +634,25 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
     }
   }
 
+  /// Muat terjemahan Batak untuk semua ayat di _verses sekaligus (saat filter Batak dipilih)
+  Future<void> _fetchBatakPassage() async {
+    if (_verses.isEmpty) return;
+    setState(() => _isLoadingBatakPassage = true);
+    for (final v in _verses) {
+      final key = "${v.bookAbbr}_${v.chapter}_${v.verse}";
+      if (_batakVerses.containsKey(key)) continue;
+      String bookName = v.bookName.isNotEmpty ? v.bookName : _getBookNameForAPI(v.bookAbbr);
+      if (selectedBook == 'Jude' && (v.bookAbbr == 'Jud' || bookName == 'Hakim-hakim')) bookName = 'Yudas';
+      if (selectedBook == 'Jud' && (v.bookAbbr == 'Jude' || bookName == 'Yudas')) bookName = 'Hakim-hakim';
+      final batakText = await _scrapeBatakVerse(bookName, v.chapter, v.verse);
+      if (!mounted) return;
+      setState(() {
+        _batakVerses[key] = batakText ?? 'Terjemahan Batak tidak tersedia untuk ayat ini';
+      });
+    }
+    if (mounted) setState(() => _isLoadingBatakPassage = false);
+  }
+
   /// Helper untuk memperbaiki bookName dan bookAbbr berdasarkan selectedBook
   /// Fix: API mungkin salah mengembalikan "Jude" (Yudas) untuk "Jud" (Hakim-hakim)
   Map<String, String> _fixBookInfo(String apiBookName, String apiBookAbbr) {
@@ -754,7 +777,13 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
         setState(() {
           _verses = verses;
           _isLoading = false;
+          if (_alkitabLanguage == 'batak' && verses.isNotEmpty) {
+            _isLoadingBatakPassage = true;
+          }
         });
+        if (_alkitabLanguage == 'batak' && verses.isNotEmpty) {
+          _fetchBatakPassage();
+        }
       } else {
         ErrorHandler.logError('HTTP ${resp.statusCode}');
         setState(() {
@@ -888,6 +917,46 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                 ),
                 child: Column(
                   children: [
+                    // Filter bahasa: Indonesia | Batak
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SegmentedButton<String>(
+                            segments: const [
+                              ButtonSegment(
+                                value: 'indonesia',
+                                label: Text('Indonesia'),
+                                icon: Icon(Icons.translate, size: 18),
+                              ),
+                              ButtonSegment(
+                                value: 'batak',
+                                label: Text('Batak'),
+                                icon: Icon(Icons.menu_book, size: 18),
+                              ),
+                            ],
+                            selected: {_alkitabLanguage},
+                            onSelectionChanged: (Set<String> sel) {
+                              if (sel.isNotEmpty) {
+                                setState(() {
+                                  _alkitabLanguage = sel.first;
+                                  if (_alkitabLanguage == 'batak' && _verses.isNotEmpty) {
+                                    _isLoadingBatakPassage = true;
+                                  }
+                                });
+                                if (_alkitabLanguage == 'batak' && _verses.isNotEmpty) {
+                                  _fetchBatakPassage();
+                                }
+                              }
+                            },
+                            style: ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              padding: MaterialStateProperty.all(const EdgeInsets.symmetric(vertical: 10, horizontal: 8)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
                     Row(
                       children: [
                         Expanded(
@@ -993,6 +1062,22 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
               SliverFillRemaining(
                 child: _buildInfoState(Icons.search_off, "Ayat tidak ditemukan"),
               )
+          else if (_alkitabLanguage == 'batak' && _isLoadingBatakPassage)
+            SliverFillRemaining(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Memuat terjemahan Batak...',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+            )
             else
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
@@ -1006,85 +1091,82 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                           padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Alkitab Bahasa Indonesia:',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey[700],
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Sumber: https://api.ayt.co',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Alkitab Bahasa Batak Toba:',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey[700],
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Sumber: https://alkitab.mobi/',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'AYT: Copyrighted by Yayasan Lembaga SABDA (YLSA)',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Alkitab Bahasa Batak Toba - Copyrighted 1998 Indonesia Bible Society Batak Toba (BBC)',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '(https://www.bible.com/id/version/17)',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Alkitab (TL) 1974 - Copyrighted LAI 1974',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Alkitab (TB) 1954 - Copyrighted LAI 1954',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
+                            children: _alkitabLanguage == 'batak'
+                                ? [
+                                    Text(
+                                      'Alkitab Bahasa Batak Toba:',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Sumber: https://alkitab.mobi/',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Alkitab Bahasa Batak Toba - Copyrighted 1998 Indonesia Bible Society Batak Toba (BBC)',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ]
+                                : [
+                                    Text(
+                                      'Alkitab Bahasa Indonesia:',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Sumber: https://api.ayt.co',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'AYT: Copyrighted by Yayasan Lembaga SABDA (YLSA)',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Alkitab (TL) 1974 - Copyrighted LAI 1974',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Alkitab (TB) 1954 - Copyrighted LAI 1954',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
                           ),
                         );
                       }
                       final v = _verses[index];
+                      final key = "${v.bookAbbr}_${v.chapter}_${v.verse}";
+                      final batakText = _batakVerses[key];
+                      final showBatakOnly = _alkitabLanguage == 'batak';
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
                         padding: const EdgeInsets.all(16),
@@ -1102,136 +1184,133 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    "${v.bookName} ${v.chapter}:${v.verse}",
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                      color: Colors.blue[900],
-                                    ),
-                                  ),
-                                ),
-                                TextButton.icon(
-                                  onPressed: () => _fetchBatakVerse(v),
-                                  icon: Icon(
-                                    Icons.translate,
-                                    size: 16,
-                                    color: Colors.orange[700],
-                                  ),
-                                  label: Text(
-                                    'Batak',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.orange[700],
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  style: TextButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const Divider(height: 20),
                             Text(
-                              v.text,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                height: 1.6,
-                                color: Color(0xFF334155),
+                              "${v.bookName} ${v.chapter}:${v.verse}",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.blue[900],
                               ),
                             ),
-                            // Tampilkan terjemahan Batak jika sudah di-load
-                            Builder(
-                              builder: (context) {
-                                final key = "${v.bookAbbr}_${v.chapter}_${v.verse}";
-                                final isLoading = _loadingBatak[key] ?? false;
-                                final batakText = _batakVerses[key];
-                                
-                                if (isLoading) {
-                                  return Padding(
-                                    padding: const EdgeInsets.only(top: 12),
-                                    child: Row(
-                                      children: [
-                                        SizedBox(
-                                          width: 14,
-                                          height: 14,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.orange[700]!),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Memuat terjemahan Batak...',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[600],
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }
-                                
-                                if (batakText != null && batakText.isNotEmpty) {
-                                  return Container(
-                                    margin: const EdgeInsets.only(top: 16),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orange[50],
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: Colors.orange[200]!,
-                                        width: 1,
+                            const Divider(height: 20),
+                            if (showBatakOnly) ...[
+                              if (batakText != null && batakText.isNotEmpty)
+                                Text(
+                                  batakText,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    height: 1.6,
+                                    color: Colors.orange[900],
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                )
+                              else
+                                Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.orange[700]!),
                                       ),
                                     ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.translate,
-                                              size: 14,
-                                              color: Colors.orange[700],
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              'Bahasa Batak Toba',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.orange[800],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          batakText,
-                                          style: TextStyle(
-                                            fontSize: 15,
-                                            height: 1.6,
-                                            color: Colors.orange[900],
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                      ],
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Memuat...',
+                                      style: TextStyle(fontSize: 12, color: Colors.grey[600], fontStyle: FontStyle.italic),
                                     ),
-                                  );
-                                }
-                                
-                                return const SizedBox.shrink();
-                              },
-                            ),
+                                  ],
+                                ),
+                            ] else ...[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const SizedBox.shrink(),
+                                  TextButton.icon(
+                                    onPressed: () => _fetchBatakVerse(v),
+                                    icon: Icon(Icons.translate, size: 16, color: Colors.orange[700]),
+                                    label: Text(
+                                      'Batak',
+                                      style: TextStyle(fontSize: 12, color: Colors.orange[700], fontWeight: FontWeight.w600),
+                                    ),
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Text(
+                                v.text,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  height: 1.6,
+                                  color: Color(0xFF334155),
+                                ),
+                              ),
+                              Builder(
+                                builder: (context) {
+                                  final isLoading = _loadingBatak[key] ?? false;
+                                  final bt = _batakVerses[key];
+                                  if (isLoading) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 12),
+                                      child: Row(
+                                        children: [
+                                          SizedBox(
+                                            width: 14,
+                                            height: 14,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              valueColor: AlwaysStoppedAnimation<Color>(Colors.orange[700]!),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Memuat terjemahan Batak...',
+                                            style: TextStyle(fontSize: 12, color: Colors.grey[600], fontStyle: FontStyle.italic),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                  if (bt != null && bt.isNotEmpty) {
+                                    return Container(
+                                      margin: const EdgeInsets.only(top: 16),
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange[50],
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.orange[200]!, width: 1),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Icon(Icons.translate, size: 14, color: Colors.orange[700]),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                'Bahasa Batak Toba',
+                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange[800]),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            bt,
+                                            style: TextStyle(fontSize: 15, height: 1.6, color: Colors.orange[900], fontStyle: FontStyle.italic),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
+                            ],
                           ],
                         ),
                       );

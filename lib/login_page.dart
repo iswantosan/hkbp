@@ -249,10 +249,9 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ),
                             const SizedBox(height: 30),
-                            // --- PERUBAHAN: Tombol Batal dan Masuk dalam satu Row ---
+                            // Tombol Masuk dan Batal
                             Row(
                               children: [
-                                // Tombol Masuk
                                 Expanded(
                                   child: ElevatedButton(
                                     style: ElevatedButton.styleFrom(
@@ -269,7 +268,6 @@ class _LoginPageState extends State<LoginPage> {
                                   ),
                                 ),
                                 const SizedBox(width: 15),
-                                // Tombol Batal
                                 Expanded(
                                   child: OutlinedButton(
                                     style: OutlinedButton.styleFrom(
@@ -279,7 +277,6 @@ class _LoginPageState extends State<LoginPage> {
                                           borderRadius: BorderRadius.circular(15)),
                                     ),
                                     onPressed: () {
-                                      // Kembali ke halaman sebelumnya
                                       Navigator.of(context).pop();
                                     },
                                     child: Text("Batal",
@@ -288,43 +285,39 @@ class _LoginPageState extends State<LoginPage> {
                                             fontWeight: FontWeight.bold)),
                                   ),
                                 ),
-                                const SizedBox(width: 15),
-
-
-
                               ],
                             ),
-
-
-
-                            // --- AKHIR PERUBAHAN ---
+                            const SizedBox(height: 20),
+                            // Link Daftar di bawah tombol
+                            Center(
+                              child: TextButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => const RegisterPage(),
+                                    ),
+                                  );
+                                },
+                                child: const Text(
+                                  "Belum punya akun? Daftar di sini",
+                                  style: TextStyle(
+                                    color: Colors.blue,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
                             const Expanded(child: SizedBox()),
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Text(
                                   "Versi 1.0.0",
                                   style: TextStyle(
                                     color: Colors.grey,
                                     fontSize: 12,
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => const RegisterPage(),
-                                      ),
-                                    );
-                                  },
-                                  child: const Text(
-                                    "Daftar",
-                                    style: TextStyle(
-                                      color: Colors.blue,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
                                   ),
                                 ),
                               ],

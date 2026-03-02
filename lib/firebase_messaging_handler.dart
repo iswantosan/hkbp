@@ -1,8 +1,15 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:http/http.dart' as http;
+
+import 'config/api_config.dart';
+import 'services/auth_service.dart';
 
 // Initialize Flutter Local Notifications
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -140,15 +147,54 @@ Future<void> setupFCM() async {
     _handleMessageOpened(initialMessage);
   }
 
-  // Get FCM token
+  // Get FCM token dan daftarkan ke server (setiap app run)
   String? token = await messaging.getToken();
   debugPrint('FCM Token: $token');
-  
+  unawaited(registerFcmTokenToServer());
+
   // Listen untuk token refresh
   messaging.onTokenRefresh.listen((newToken) {
     debugPrint('FCM Token refreshed: $newToken');
-    // Kirim token baru ke server jika diperlukan
+    registerFcmTokenToServer();
   });
+}
+
+/// Kirim FCM token ke API supaya notifikasi bisa dikirim ke semua user.
+/// Dipanggil setiap app run (di setupFCM dan di HomeScreen) dan saat token refresh.
+Future<void> registerFcmTokenToServer() async {
+  try {
+    final token = await FirebaseMessaging.instance.getToken().timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => null,
+    );
+    if (token == null || token.isEmpty) return;
+
+    final loginData = await AuthService.getLoginData();
+    final userId = loginData?['userId'] as int?;
+
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}/register_fcm_token.php?api_key=${ApiConfig.apiKey}',
+    );
+    final body = <String, dynamic>{'fcm_token': token};
+    if (userId != null) body['user_id'] = userId;
+
+    final response = await http
+        .post(
+          url,
+          headers: {'Content-Type': 'application/json; charset=UTF-8'},
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data['status'] == 'success') {
+        debugPrint('FCM token terdaftar ke server');
+      }
+    }
+  } catch (e) {
+    debugPrint('Gagal register FCM token: $e');
+  }
 }
 
 /// Show local notification

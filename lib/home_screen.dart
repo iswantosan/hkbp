@@ -21,6 +21,7 @@ import 'gedung_serbaguna_page.dart';
 import 'utils/error_handler.dart';
 import 'login_page.dart';
 import 'services/auth_service.dart';
+import 'firebase_messaging_handler.dart';
 // ----------------------------
 
 class HomeScreen extends StatefulWidget {
@@ -60,6 +61,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Daftarkan FCM token tiap kali user buka Home (termasuk setelah login)
+    registerFcmTokenToServer();
     Timer.periodic(const Duration(seconds: 5), (Timer timer) {
       if (_pageController.hasClients) {
         if (_currentPage < bannerImages.length - 1) {

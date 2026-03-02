@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "337721876936",
+    "project_id": "hkbp-pondok-kopi",
+    "storage_bucket": "hkbp-pondok-kopi.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:337721876936:android:ef5c67141acbd22bb2a0fd",
+        "android_client_info": {
+          "package_name": "com.app.hkbp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBk3974l3yD5wt6xrbp_s17bo-0n7jUAuA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
